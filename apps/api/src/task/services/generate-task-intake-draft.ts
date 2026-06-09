@@ -51,12 +51,14 @@ function buildGeminiResponseSchema() {
       requestedChanges: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "Concrete requested changes as bullet points.",
+        description:
+          "Concrete requested changes as markdown-friendly bullet points.",
       },
       workerNotes: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "Cautions, context, or follow-up notes for the worker.",
+        description:
+          "Cautions, context, URLs, or follow-up notes for the worker. Use markdown links and inline code when helpful.",
       },
       extractedClientMessage: {
         type: Type.STRING,
@@ -127,13 +129,16 @@ function buildPrompt(
     "- Use only facts present in the client message or screenshot.",
     "- Do not invent business names, URLs, due dates, priorities, or requirements.",
     "- If something is unclear, leave fields empty/null and add an item to missingInfo.",
-    "- requestedChanges must be concrete, actionable bullet points.",
-    "- workerNotes should include cautions, dependencies, or follow-ups.",
+    "- requestedChanges must be concrete, actionable bullet points with markdown-friendly wording.",
+    "- workerNotes should include cautions, dependencies, URLs, or follow-ups.",
+    "- Use markdown links for URLs and inline backticks for short quoted copy when helpful.",
     "- labels are suggestions only; prefer existing labels when they fit.",
     "- dueDate must be YYYY-MM-DD or null.",
     "- priority must be one of: no-priority, low, medium, high, urgent.",
     "- confidence must be between 0 and 1.",
     "- extractedClientMessage must preserve the client's original wording as closely as possible.",
+    "- Keep requestedChanges and workerNotes markdown-friendly: use [label](https://example.com) for URLs, inline `code` for short snippets, and fenced ``` blocks for multi-line quoted copy when needed.",
+    "- Do not escape markdown characters unnecessarily in summary or bullet items.",
     sourceInstructions,
     contextLines.length > 0 ? `\nContext:\n${contextLines.join("\n")}` : "",
     input.rawMessage ? `\nClient message:\n<<<\n${input.rawMessage}\n>>>` : "",

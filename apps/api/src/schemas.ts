@@ -213,4 +213,5 @@ export const configSchema = v.object({
   hasGoogleSignIn: v.nullable(v.boolean()),
   hasDiscordSignIn: v.nullable(v.boolean()),
   hasCustomOAuth: v.nullable(v.boolean()),
+  hasAiTaskIntake: v.boolean(),
 });

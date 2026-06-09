@@ -68,8 +68,11 @@ Optional AI-assisted task drafting from pasted client messages. Disabled by defa
 - `GEMINI_API_KEY` - Google Gemini API key (required when enabled)
 - `GEMINI_MODEL` - Gemini model name (default: `gemini-2.5-flash`)
 - `AI_TASK_INTAKE_MAX_INPUT_CHARS` - Maximum pasted message length in characters (default: `20000`)
+- `AI_TASK_INTAKE_MAX_IMAGE_BYTES` - Maximum screenshot upload size in bytes (default: `5242880`, 5 MB)
 
 The public `/api/config` endpoint exposes `hasAiTaskIntake: true` only when `AI_TASK_INTAKE_ENABLED=true`, `AI_PROVIDER=gemini`, and `GEMINI_API_KEY` is set.
+
+AI task intake accepts pasted text, an uploaded screenshot (PNG/JPEG/WebP), or both. Images are sent to Gemini for analysis and are not stored.
 
 For a complete list of all environment variables, their descriptions, and configuration options, see the [official documentation](https://kaneo.app/docs/core/installation/environment-variables).
 

@@ -1,10 +1,18 @@
 import {
   AlertCircle,
   ChevronDown,
+  ImagePlus,
   Loader2,
   MessageSquareText,
+  X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +50,38 @@ type ClientMessageIntakeModalProps = {
   onApply: (draft: AppliedIntakeDraft) => void;
 };
 
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+type UploadedImage = {
+  mimeType: (typeof ALLOWED_IMAGE_TYPES)[number];
+  data: string;
+  previewUrl: string;
+  fileName: string;
+};
+
+async function readImageAsBase64(
+  file: File,
+): Promise<{ mimeType: string; data: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Failed to read image"));
+        return;
+      }
+
+      const base64 = result.includes(",")
+        ? (result.split(",")[1] ?? "")
+        : result;
+      resolve({ mimeType: file.type, data: base64 });
+    };
+    reader.onerror = () => reject(new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function parseDueDate(value: string | null): Date | undefined {
   if (!value) {
     return undefined;
@@ -56,7 +96,7 @@ function ReviewSection({
   children,
 }: {
   label: string;
-	children: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
@@ -77,6 +117,11 @@ function ClientMessageIntakeModal({
     null,
   );
   const [originalMessageOpen, setOriginalMessageOpen] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState<UploadedImage | null>(
+    null,
+  );
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     mutateAsync: generateDraft,
@@ -93,15 +138,76 @@ function ClientMessageIntakeModal({
     setRawMessage("");
     setDraft(null);
     setOriginalMessageOpen(false);
+    setImageError(null);
+    setUploadedImage((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
     reset();
   }, [open, reset]);
+
+  const canGenerate = Boolean(rawMessage.trim() || uploadedImage);
+
+  const handleImageSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (
+      !ALLOWED_IMAGE_TYPES.includes(
+        file.type as (typeof ALLOWED_IMAGE_TYPES)[number],
+      )
+    ) {
+      setImageError("Upload a PNG, JPEG, or WebP screenshot.");
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError("Screenshot must be 5 MB or smaller.");
+      return;
+    }
+
+    try {
+      const { mimeType, data } = await readImageAsBase64(file);
+      setUploadedImage((current) => {
+        if (current?.previewUrl) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+
+        return {
+          mimeType: mimeType as UploadedImage["mimeType"],
+          data,
+          previewUrl: URL.createObjectURL(file),
+          fileName: file.name,
+        };
+      });
+      setImageError(null);
+    } catch {
+      setImageError("Could not read the selected screenshot.");
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setUploadedImage((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
+    setImageError(null);
+  };
 
   const handleClose = () => {
     onClose();
   };
 
   const handleGenerate = async () => {
-    if (!rawMessage.trim()) {
+    if (!canGenerate) {
       return;
     }
 
@@ -110,7 +216,15 @@ function ClientMessageIntakeModal({
     try {
       const result = await generateDraft({
         projectId,
-        rawMessage: rawMessage.trim(),
+        ...(rawMessage.trim() ? { rawMessage: rawMessage.trim() } : {}),
+        ...(uploadedImage
+          ? {
+              image: {
+                mimeType: uploadedImage.mimeType,
+                data: uploadedImage.data,
+              },
+            }
+          : {}),
       });
       setDraft(result);
     } catch {
@@ -153,8 +267,8 @@ function ClientMessageIntakeModal({
                 Create from Client Message
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
-                Paste an email thread or client request. Kaneo will draft a task
-                for you to review before creating it.
+                Paste a client message, upload a screenshot, or both. Kaneo will
+                draft a task for you to review before creating it.
               </DialogDescription>
             </div>
           </div>
@@ -175,10 +289,77 @@ function ClientMessageIntakeModal({
                   disabled={isPending}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Include the full message so the draft can preserve quotes,
-                  links, and context.
+                  Optional when uploading a screenshot. Include the full message
+                  to preserve quotes, links, and context.
                 </p>
               </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Screenshot
+                </p>
+                <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={ALLOWED_IMAGE_TYPES.join(",")}
+                    className="hidden"
+                    onChange={handleImageSelect}
+                    disabled={isPending}
+                  />
+
+                  {uploadedImage ? (
+                    <div className="flex items-start gap-3">
+                      <img
+                        src={uploadedImage.previewUrl}
+                        alt="Uploaded screenshot preview"
+                        className="h-24 w-auto max-w-full rounded-md border border-border object-contain bg-background"
+                      />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="truncate text-sm text-foreground">
+                          {uploadedImage.fileName}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveImage}
+                          disabled={isPending}
+                          className="border-border text-foreground hover:bg-accent"
+                        >
+                          <X className="h-3.5 w-3.5 mr-1.5" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isPending}
+                      className="border-border text-foreground hover:bg-accent"
+                    >
+                      <ImagePlus className="h-4 w-4 mr-2" />
+                      Upload screenshot
+                    </Button>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    PNG, JPEG, or WebP up to 5 MB. Screenshots are analyzed by
+                    Gemini and are not stored.
+                  </p>
+                </div>
+              </div>
+
+              {imageError && (
+                <Alert variant="error">
+                  <AlertCircle />
+                  <AlertTitle>Invalid screenshot</AlertTitle>
+                  <AlertDescription>{imageError}</AlertDescription>
+                </Alert>
+              )}
 
               {error && (
                 <Alert variant="error">
@@ -273,7 +454,7 @@ function ClientMessageIntakeModal({
                 type="button"
                 size="sm"
                 onClick={handleGenerate}
-                disabled={!rawMessage.trim() || isPending}
+                disabled={!canGenerate || isPending}
                 className="gap-2"
               >
                 {isPending && <Loader2 className="h-4 w-4 animate-spin" />}

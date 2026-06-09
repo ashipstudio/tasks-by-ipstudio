@@ -36,7 +36,25 @@ import updateTaskPriority from "./controllers/update-task-priority";
 import updateTaskStatus from "./controllers/update-task-status";
 import updateTaskTitle from "./controllers/update-task-title";
 import generateTaskIntakeDraft from "./services/generate-task-intake-draft";
+import { AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES } from "./types/ai-task-intake";
 import { VALID_PRIORITIES } from "./validate-task-fields";
+
+const aiTaskIntakeImageSchema = v.object({
+  mimeType: v.picklist(AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES),
+  data: v.pipe(v.string(), v.minLength(1)),
+});
+
+const aiTaskIntakeDraftBodySchema = v.pipe(
+  v.object({
+    rawMessage: v.optional(v.string()),
+    image: v.optional(aiTaskIntakeImageSchema),
+  }),
+  v.check(
+    (value) =>
+      Boolean(value.rawMessage?.trim()) || Boolean(value.image?.data?.trim()),
+    "Either rawMessage or image must be provided",
+  ),
+);
 
 const task = new Hono<{
   Variables: {
@@ -196,7 +214,7 @@ const task = new Hono<{
       operationId: "generateTaskIntakeDraft",
       tags: ["Tasks"],
       description:
-        "Generate a structured task draft from a pasted client message",
+        "Generate a structured task draft from a pasted client message or screenshot",
       responses: {
         200: {
           description: "Structured task intake draft",
@@ -209,17 +227,15 @@ const task = new Hono<{
       },
     }),
     validator("param", v.object({ projectId: v.string() })),
-    validator(
-      "json",
-      v.object({
-        rawMessage: v.pipe(v.string(), v.minLength(1)),
-      }),
-    ),
+    validator("json", aiTaskIntakeDraftBodySchema),
     workspaceAccess.fromProject("projectId"),
     async (c) => {
-      const { rawMessage } = c.req.valid("json");
+      const body = c.req.valid("json");
 
-      const draft = await generateTaskIntakeDraft({ rawMessage });
+      const draft = await generateTaskIntakeDraft({
+        rawMessage: body.rawMessage,
+        image: body.image,
+      });
 
       return c.json(draft);
     },

@@ -8,6 +8,7 @@ import type {
   AiTaskIntakeResult,
 } from "../types/ai-task-intake";
 import { coercePriority, VALID_PRIORITIES } from "../validate-task-fields";
+import { validateAiTaskIntakeInput } from "../validate-task-intake-input";
 
 const GEMINI_REQUEST_TIMEOUT_MS = 30_000;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -18,6 +19,7 @@ const geminiDraftOutputSchema = v.object({
   summary: v.string(),
   requestedChanges: v.array(v.string()),
   workerNotes: v.array(v.string()),
+  extractedClientMessage: v.string(),
   priority: v.picklist(VALID_PRIORITIES),
   dueDate: v.nullable(v.string()),
   labels: v.array(v.string()),
@@ -56,6 +58,11 @@ function buildGeminiResponseSchema() {
         items: { type: Type.STRING },
         description: "Cautions, context, or follow-up notes for the worker.",
       },
+      extractedClientMessage: {
+        type: Type.STRING,
+        description:
+          "Verbatim client wording from the pasted text or screenshot. Preserve quotes and line breaks where possible.",
+      },
       priority: {
         type: Type.STRING,
         enum: [...VALID_PRIORITIES],
@@ -87,6 +94,7 @@ function buildGeminiResponseSchema() {
       "summary",
       "requestedChanges",
       "workerNotes",
+      "extractedClientMessage",
       "priority",
       "dueDate",
       "labels",
@@ -96,7 +104,9 @@ function buildGeminiResponseSchema() {
   };
 }
 
-function buildPrompt(input: AiTaskIntakeInput): string {
+function buildPrompt(
+  input: AiTaskIntakeInput & { rawMessage: string; hasImage: boolean },
+): string {
   const contextLines = [
     input.workspaceName ? `Workspace: ${input.workspaceName}` : null,
     input.projectName ? `Project: ${input.projectName}` : null,
@@ -105,10 +115,16 @@ function buildPrompt(input: AiTaskIntakeInput): string {
       : null,
   ].filter(Boolean);
 
+  const sourceInstructions = input.hasImage
+    ? input.rawMessage
+      ? "Use both the pasted text and the attached screenshot. Prefer the pasted text for originalClientMessage when provided."
+      : "The client request is in the attached screenshot. Read all visible text carefully and extract the client message verbatim into extractedClientMessage."
+    : "The client request is in the pasted message below.";
+
   return [
-    "You are helping a project management team turn a pasted client email or message into a structured internal task draft.",
+    "You are helping a project management team turn a client email or message into a structured internal task draft.",
     "Rules:",
-    "- Use only facts present in the client message.",
+    "- Use only facts present in the client message or screenshot.",
     "- Do not invent business names, URLs, due dates, priorities, or requirements.",
     "- If something is unclear, leave fields empty/null and add an item to missingInfo.",
     "- requestedChanges must be concrete, actionable bullet points.",
@@ -117,11 +133,34 @@ function buildPrompt(input: AiTaskIntakeInput): string {
     "- dueDate must be YYYY-MM-DD or null.",
     "- priority must be one of: no-priority, low, medium, high, urgent.",
     "- confidence must be between 0 and 1.",
+    "- extractedClientMessage must preserve the client's original wording as closely as possible.",
+    sourceInstructions,
     contextLines.length > 0 ? `\nContext:\n${contextLines.join("\n")}` : "",
-    "\nClient message:\n<<<",
-    input.rawMessage,
-    ">>>",
-  ].join("\n");
+    input.rawMessage ? `\nClient message:\n<<<\n${input.rawMessage}\n>>>` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildGeminiContents(
+  input: AiTaskIntakeInput & { rawMessage: string; hasImage: boolean },
+) {
+  const parts: Array<
+    { text: string } | { inlineData: { mimeType: string; data: string } }
+  > = [];
+
+  if (input.image) {
+    parts.push({
+      inlineData: {
+        mimeType: input.image.mimeType,
+        data: input.image.data,
+      },
+    });
+  }
+
+  parts.push({ text: buildPrompt(input) });
+
+  return parts;
 }
 
 function normalizeStringArray(values: string[]): string[] {
@@ -173,9 +212,31 @@ function buildTaskTitle(
   };
 }
 
+function resolveOriginalClientMessage(
+  rawMessage: string,
+  extractedClientMessage: string,
+  imageOnly: boolean,
+): string {
+  if (rawMessage) {
+    return rawMessage;
+  }
+
+  const extracted = extractedClientMessage.trim();
+  if (!extracted) {
+    return imageOnly ? "Content extracted from uploaded screenshot." : "";
+  }
+
+  if (imageOnly) {
+    return `${extracted}\n\n(Extracted from uploaded screenshot.)`;
+  }
+
+  return extracted;
+}
+
 function sanitizeModelOutput(
   output: GeminiDraftOutput,
   rawMessage: string,
+  imageOnly: boolean,
 ): AiTaskIntakeResult {
   const { priority } = coercePriority(output.priority);
   const { title, businessName } = buildTaskTitle(
@@ -189,7 +250,11 @@ function sanitizeModelOutput(
     summary: output.summary.trim(),
     requestedChanges: normalizeStringArray(output.requestedChanges),
     workerNotes: normalizeStringArray(output.workerNotes),
-    originalClientMessage: rawMessage,
+    originalClientMessage: resolveOriginalClientMessage(
+      rawMessage,
+      output.extractedClientMessage,
+      imageOnly,
+    ),
     priority: priority as AiTaskIntakePriority,
     dueDate: normalizeDueDate(output.dueDate),
     labels: normalizeStringArray(output.labels),
@@ -226,18 +291,16 @@ export async function generateTaskIntakeDraft(
   const settings = getAiTaskIntakeSettings();
   assertAiTaskIntakeAvailable(settings);
 
-  const rawMessage = input.rawMessage.trim();
-  if (!rawMessage) {
-    throw new HTTPException(400, {
-      message: "Client message is required",
-    });
-  }
+  const validatedInput = validateAiTaskIntakeInput(input, {
+    maxInputChars: settings.maxInputChars,
+    maxImageBytes: settings.maxImageBytes,
+  });
 
-  if (rawMessage.length > settings.maxInputChars) {
-    throw new HTTPException(400, {
-      message: `Client message exceeds the maximum length of ${settings.maxInputChars} characters`,
-    });
-  }
+  const imageOnly = !validatedInput.rawMessage && Boolean(validatedInput.image);
+  const geminiInput = {
+    ...validatedInput,
+    hasImage: Boolean(validatedInput.image),
+  };
 
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => {
@@ -248,7 +311,7 @@ export async function generateTaskIntakeDraft(
     const ai = new GoogleGenAI({ apiKey: settings.geminiApiKey });
     const response = await ai.models.generateContent({
       model: settings.geminiModel,
-      contents: buildPrompt({ ...input, rawMessage }),
+      contents: buildGeminiContents(geminiInput),
       config: {
         responseMimeType: "application/json",
         responseSchema: buildGeminiResponseSchema(),
@@ -275,7 +338,11 @@ export async function generateTaskIntakeDraft(
 
     const validatedOutput = v.parse(geminiDraftOutputSchema, parsedJson);
 
-    return sanitizeModelOutput(validatedOutput, rawMessage);
+    return sanitizeModelOutput(
+      validatedOutput,
+      validatedInput.rawMessage,
+      imageOnly,
+    );
   } catch (error) {
     if (abortController.signal.aborted) {
       throw new HTTPException(504, {

@@ -1,5 +1,10 @@
-import { AlertCircle, ChevronDown, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Loader2,
+  MessageSquareText,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { GenerateTaskIntakeDraftResponse } from "@/fetchers/task/generate-task-intake-draft";
 import useGenerateTaskIntakeDraft from "@/hooks/mutations/task/use-generate-task-intake-draft";
 import { cn } from "@/lib/cn";
+import { formatTaskIntakeDescription } from "@/lib/format-task-intake-markdown";
 
 type Priority = "no-priority" | "low" | "medium" | "high" | "urgent";
 
@@ -36,32 +42,6 @@ type ClientMessageIntakeModalProps = {
   onApply: (draft: AppliedIntakeDraft) => void;
 };
 
-function formatBulletList(items: string[]): string {
-  if (items.length === 0) {
-    return "";
-  }
-
-  return items.map((item) => `- ${item}`).join("\n");
-}
-
-export function formatTaskIntakeDescription(
-  draft: GenerateTaskIntakeDraftResponse,
-): string {
-  const sections = [
-    `## Summary\n\n${draft.summary}`,
-    `## Requested Changes\n\n${formatBulletList(draft.requestedChanges)}`,
-    `## Notes for Worker\n\n${formatBulletList(draft.workerNotes)}`,
-  ];
-
-  if (draft.missingInfo.length > 0) {
-    sections.push(`## Missing Info\n\n${formatBulletList(draft.missingInfo)}`);
-  }
-
-  sections.push(`## Original Client Message\n\n${draft.originalClientMessage}`);
-
-  return sections.join("\n\n");
-}
-
 function parseDueDate(value: string | null): Date | undefined {
   if (!value) {
     return undefined;
@@ -69,6 +49,21 @@ function parseDueDate(value: string | null): Date | undefined {
 
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function ReviewSection({
+  label,
+  children,
+}: {
+  label: string;
+	children: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="text-sm text-muted-foreground">{children}</div>
+    </div>
+  );
 }
 
 function ClientMessageIntakeModal({
@@ -144,25 +139,46 @@ function ClientMessageIntakeModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Create from Client Message</DialogTitle>
-          <DialogDescription>
-            Paste an email thread or client request. Kaneo will draft a task
-            title and description for you to review before creating the task.
-          </DialogDescription>
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border-border bg-card"
+        showCloseButton={false}
+      >
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-0">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+              <MessageSquareText className="h-5 w-5 text-primary" />
+            </div>
+            <div className="space-y-1.5 text-left">
+              <DialogTitle className="text-xl font-semibold tracking-tight">
+                Create from Client Message
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                Paste an email thread or client request. Kaneo will draft a task
+                for you to review before creating it.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 px-1">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-4">
           {!draft ? (
             <>
-              <Textarea
-                value={rawMessage}
-                onChange={(event) => setRawMessage(event.target.value)}
-                placeholder="Paste the client email or message here..."
-                className="min-h-48"
-                disabled={isPending}
-              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Client message
+                </p>
+                <Textarea
+                  value={rawMessage}
+                  onChange={(event) => setRawMessage(event.target.value)}
+                  placeholder="Paste the client email or message here..."
+                  className="min-h-52"
+                  disabled={isPending}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Include the full message so the draft can preserve quotes,
+                  links, and context.
+                </p>
+              </div>
 
               {error && (
                 <Alert variant="error">
@@ -173,79 +189,64 @@ function ClientMessageIntakeModal({
               )}
             </>
           ) : (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Generated title
-                </p>
+            <div className="space-y-3">
+              <ReviewSection label="Generated title">
                 <p className="text-base font-semibold text-foreground">
                   {draft.title}
                 </p>
-              </div>
+              </ReviewSection>
 
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Summary
-                </p>
-                <p className="text-sm text-foreground whitespace-pre-wrap">
+              <ReviewSection label="Summary">
+                <p className="whitespace-pre-wrap text-foreground">
                   {draft.summary}
                 </p>
-              </div>
+              </ReviewSection>
 
               {draft.requestedChanges.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Requested changes
-                  </p>
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-foreground">
+                <ReviewSection label="Requested changes">
+                  <ul className="list-disc pl-5 space-y-1 text-foreground">
                     {draft.requestedChanges.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
-                </div>
+                </ReviewSection>
               )}
 
               {draft.workerNotes.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Notes for worker
-                  </p>
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-foreground">
+                <ReviewSection label="Notes for worker">
+                  <ul className="list-disc pl-5 space-y-1 text-foreground">
                     {draft.workerNotes.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
-                </div>
+                </ReviewSection>
               )}
 
               {draft.missingInfo.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Missing info
-                  </p>
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-foreground">
+                <ReviewSection label="Missing info">
+                  <ul className="list-disc pl-5 space-y-1 text-foreground">
                     {draft.missingInfo.map((item) => (
                       <li key={item}>{item}</li>
                     ))}
                   </ul>
-                </div>
+                </ReviewSection>
               )}
 
               <Collapsible
                 open={originalMessageOpen}
                 onOpenChange={setOriginalMessageOpen}
-                className="rounded-lg border border-border"
+                className="rounded-lg border border-border bg-muted/20"
               >
-                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium text-foreground hover:bg-accent/50">
+                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-accent/50 transition-colors">
                   <span>Original client message</span>
                   <ChevronDown
                     className={cn(
-                      "h-4 w-4 shrink-0 transition-transform",
+                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
                       originalMessageOpen && "rotate-180",
                     )}
                   />
                 </CollapsibleTrigger>
-                <CollapsiblePanel className="border-t border-border px-3 py-3">
+                <CollapsiblePanel className="border-t border-border px-4 py-3">
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                     {draft.originalClientMessage}
                   </p>
@@ -255,19 +256,22 @@ function ClientMessageIntakeModal({
           )}
         </div>
 
-        <DialogFooter className="flex-shrink-0 border-t border-border pt-4">
+        <DialogFooter className="flex-shrink-0 border-t border-border bg-background px-6 py-4 gap-2">
           {!draft ? (
             <>
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={handleClose}
                 disabled={isPending}
+                className="border-border text-foreground hover:bg-accent"
               >
                 Cancel
               </Button>
               <Button
                 type="button"
+                size="sm"
                 onClick={handleGenerate}
                 disabled={!rawMessage.trim() || isPending}
                 className="gap-2"
@@ -278,13 +282,25 @@ function ClientMessageIntakeModal({
             </>
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={handleBack}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleBack}
+                className="border-border text-foreground hover:bg-accent mr-auto"
+              >
                 Back
               </Button>
-              <Button type="button" onClick={handleClose} variant="ghost">
+              <Button
+                type="button"
+                onClick={handleClose}
+                variant="outline"
+                size="sm"
+                className="border-border text-foreground hover:bg-accent"
+              >
                 Cancel
               </Button>
-              <Button type="button" onClick={handleApply}>
+              <Button type="button" size="sm" onClick={handleApply}>
                 Apply to Task
               </Button>
             </>

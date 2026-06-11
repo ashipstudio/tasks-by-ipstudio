@@ -6,6 +6,7 @@ import {
   Loader2,
   Plus,
   Search,
+  Sparkles,
   Tag,
   UserIcon,
   X,
@@ -103,6 +104,48 @@ function normalizeTask(
     labels: task.labels ?? [],
     externalLinks: task.externalLinks ?? [],
   };
+}
+
+type AiIntakeTriggerButtonProps = {
+  disabled?: boolean;
+  onClick: () => void;
+};
+
+function AiIntakeTriggerButton({
+  disabled,
+  onClick,
+}: AiIntakeTriggerButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-transparent font-medium outline-none transition-all sm:text-sm",
+        "h-8 px-[calc(--spacing(2.5)-1px)] text-sm",
+        "text-foreground",
+        !disabled && [
+          "kaneo-ai-btn",
+          "shadow-[0_0_8px_-3px_rgba(103,232,249,0.25),0_0_8px_-3px_rgba(167,139,250,0.25),0_0_8px_-3px_rgba(240,171,252,0.2)]",
+          "dark:shadow-[0_0_10px_-2px_rgba(103,232,249,0.3),0_0_10px_-2px_rgba(167,139,250,0.3),0_0_10px_-2px_rgba(240,171,252,0.25)]",
+          "hover:shadow-[0_0_14px_-2px_rgba(103,232,249,0.4),0_0_14px_-2px_rgba(167,139,250,0.38),0_0_14px_-2px_rgba(240,171,252,0.35)]",
+          "hover:dark:shadow-[0_0_18px_-2px_rgba(103,232,249,0.45),0_0_18px_-2px_rgba(167,139,250,0.42),0_0_18px_-2px_rgba(240,171,252,0.38)]",
+          "hover:-translate-y-px",
+          "active:translate-y-0 active:scale-[0.97] active:shadow-none active:opacity-80",
+        ],
+        disabled && "cursor-not-allowed opacity-50",
+      )}
+    >
+      <Sparkles
+        aria-hidden
+        className={cn(
+          "size-3.5 text-violet-400 dark:text-violet-300",
+          !disabled && "motion-safe:animate-pulse",
+        )}
+      />
+      <span>Draft with AI</span>
+    </button>
+  );
 }
 
 function CreateTaskModal({
@@ -1046,15 +1089,10 @@ function CreateTaskModal({
                   {t("common:modals.createTask.createMore")}
                 </label>
                 {config?.hasAiTaskIntake && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
+                  <AiIntakeTriggerButton
                     onClick={() => setIntakeModalOpen(true)}
                     disabled={isSubmitting || !resolvedProjectId}
-                  >
-                    Create from Client Message
-                  </Button>
+                  />
                 )}
               </div>
 

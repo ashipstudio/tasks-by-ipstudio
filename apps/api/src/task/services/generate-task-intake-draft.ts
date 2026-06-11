@@ -52,7 +52,7 @@ function buildGeminiResponseSchema() {
         type: Type.ARRAY,
         items: { type: Type.STRING },
         description:
-          "Concrete requested changes as markdown-friendly bullet points.",
+          "Concrete actionable changes. If a change involves code, include the verbatim snippet as a fenced code block (with language tag) on a new line within that item string.",
       },
       workerNotes: {
         type: Type.ARRAY,
@@ -63,7 +63,7 @@ function buildGeminiResponseSchema() {
       extractedClientMessage: {
         type: Type.STRING,
         description:
-          "Verbatim client wording from the pasted text or screenshot. Preserve quotes and line breaks where possible.",
+          "Verbatim client wording from the pasted text or screenshot. Preserve original line breaks. Do not add markdown formatting, fenced code blocks, or any transformation.",
       },
       priority: {
         type: Type.STRING,
@@ -129,18 +129,16 @@ function buildPrompt(
     "- Use only facts present in the client message or screenshot.",
     "- Do not invent business names, URLs, due dates, priorities, or requirements.",
     "- If something is unclear, leave fields empty/null and add an item to missingInfo.",
-    "- requestedChanges must be concrete, actionable bullet points with markdown-friendly wording.",
-    "- workerNotes should include cautions, dependencies, URLs, or follow-ups.",
-    "- summary should be worker-friendly prose with short paragraphs when helpful, not one dense block.",
-    "- Use markdown links for URLs, **bold** for emphasis, and inline backticks for short quoted copy when helpful.",
-    "- Put HTML, CSS, JS, JSON, config, or multi-line code snippets in fenced ``` blocks with a language tag when they appear in the source.",
+    "- requestedChanges must be concrete, actionable bullet points.",
+    "- If a requestedChanges item involves specific code (HTML, CSS, JS, config, etc.), include the verbatim snippet as a fenced code block with a language tag on a new line within that same item.",
+    "- workerNotes should include cautions, dependencies, URLs, or follow-ups. Use [label](url) for URLs and inline `backticks` for short code references.",
+    "- summary should be 1–3 short sentences of worker-friendly prose. Do not repeat requestedChanges.",
+    "- extractedClientMessage must be the verbatim client text with original line breaks preserved. Do not add markdown, fenced blocks, or any transformation.",
     "- labels are suggestions only; prefer existing labels when they fit.",
     "- dueDate must be YYYY-MM-DD or null.",
     "- priority must be one of: no-priority, low, medium, high, urgent.",
     "- confidence must be between 0 and 1.",
-    "- extractedClientMessage must preserve the client's original wording as closely as possible.",
-    "- Keep requestedChanges and workerNotes markdown-friendly: use [label](https://example.com) for URLs, inline `code` for short snippets, and fenced ``` blocks for multi-line quoted copy when needed.",
-    "- Do not escape markdown characters unnecessarily in summary or bullet items.",
+    "- Do not escape markdown characters unnecessarily.",
     sourceInstructions,
     contextLines.length > 0 ? `\nContext:\n${contextLines.join("\n")}` : "",
     input.rawMessage ? `\nClient message:\n<<<\n${input.rawMessage}\n>>>` : "",

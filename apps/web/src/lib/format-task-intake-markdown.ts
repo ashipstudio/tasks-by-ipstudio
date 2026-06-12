@@ -48,10 +48,58 @@ function section(heading: string, body: string | null): string | null {
   return `## ${heading}\n\n${body.trim()}`;
 }
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  pasted_email: "Pasted email",
+  screenshot: "Screenshot",
+  pasted_message: "Pasted message",
+  mixed: "Mixed (text + screenshot)",
+};
+
+function buildTaskContextSection(
+  draft: GenerateTaskIntakeDraftResponse,
+): string | null {
+  const lines: string[] = [];
+
+  if (draft.businessName) {
+    lines.push(`- **Business:** ${draft.businessName}`);
+  }
+
+  if (draft.emailSubject) {
+    lines.push(`- **Subject:** ${draft.emailSubject}`);
+  }
+
+  if (draft.sourceUrls && draft.sourceUrls.length === 1) {
+    lines.push(`- **URL:** ${draft.sourceUrls[0]}`);
+  } else if (draft.sourceUrls && draft.sourceUrls.length > 1) {
+    const urlLines = draft.sourceUrls.map((url) => `  - ${url}`).join("\n");
+    lines.push(`- **URLs:**\n${urlLines}`);
+  }
+
+  const sourceLabel =
+    SOURCE_TYPE_LABELS[draft.sourceType] ?? draft.sourceType ?? null;
+  if (sourceLabel) {
+    lines.push(`- **Source:** ${sourceLabel}`);
+  }
+
+  if (draft.senderName) {
+    lines.push(`- **Sender:** ${draft.senderName}`);
+  }
+
+  if (draft.senderEmail) {
+    lines.push(`- **Sender email:** ${draft.senderEmail}`);
+  }
+
+  if (lines.length === 0) return null;
+  return lines.join("\n");
+}
+
 export function formatTaskIntakeDescription(
   draft: GenerateTaskIntakeDraftResponse,
 ): string {
   const parts: string[] = [];
+
+  const taskContext = section("Task Context", buildTaskContextSection(draft));
+  if (taskContext) parts.push(taskContext);
 
   const summary = section("Summary", draft.summary.trim() || null);
   if (summary) parts.push(summary);

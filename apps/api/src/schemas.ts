@@ -24,6 +24,17 @@ export const projectSchema = v.object({
 export const aiTaskIntakeResultSchema = v.object({
   title: v.string(),
   businessName: v.nullable(v.string()),
+  emailSubject: v.nullable(v.string()),
+  generatedTaskTitle: v.nullable(v.string()),
+  sourceType: v.picklist([
+    "pasted_email",
+    "screenshot",
+    "pasted_message",
+    "mixed",
+  ] as const),
+  sourceUrls: v.array(v.string()),
+  senderName: v.nullable(v.string()),
+  senderEmail: v.nullable(v.string()),
   summary: v.string(),
   requestedChanges: v.array(v.string()),
   workerNotes: v.array(v.string()),

@@ -24,9 +24,21 @@ export type AiTaskIntakeInput = {
   existingLabels?: string[];
 };
 
+export type AiTaskIntakeSourceType =
+  | "pasted_email"
+  | "screenshot"
+  | "pasted_message"
+  | "mixed";
+
 export type AiTaskIntakeResult = {
   title: string;
   businessName: string | null;
+  emailSubject: string | null;
+  generatedTaskTitle: string | null;
+  sourceType: AiTaskIntakeSourceType;
+  sourceUrls: string[];
+  senderName: string | null;
+  senderEmail: string | null;
   summary: string;
   requestedChanges: string[];
   workerNotes: string[];

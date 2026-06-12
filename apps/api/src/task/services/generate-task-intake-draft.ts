@@ -6,16 +6,30 @@ import type {
   AiTaskIntakeInput,
   AiTaskIntakePriority,
   AiTaskIntakeResult,
+  AiTaskIntakeSourceType,
 } from "../types/ai-task-intake";
 import { coercePriority, VALID_PRIORITIES } from "../validate-task-fields";
 import { validateAiTaskIntakeInput } from "../validate-task-intake-input";
 
 const GEMINI_REQUEST_TIMEOUT_MS = 30_000;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const EMAIL_SUBJECT_PREFIX_PATTERN = /^(Re|RE|Fwd|FW):\s*/;
+
+const AI_TASK_INTAKE_SOURCE_TYPES = [
+  "pasted_email",
+  "screenshot",
+  "pasted_message",
+  "mixed",
+] as const;
 
 const geminiDraftOutputSchema = v.object({
   businessName: v.nullable(v.string()),
-  conciseTaskTitle: v.string(),
+  emailSubject: v.nullable(v.string()),
+  generatedTaskTitle: v.string(),
+  sourceType: v.picklist(AI_TASK_INTAKE_SOURCE_TYPES),
+  sourceUrls: v.array(v.string()),
+  senderName: v.nullable(v.string()),
+  senderEmail: v.nullable(v.string()),
   summary: v.string(),
   requestedChanges: v.array(v.string()),
   workerNotes: v.array(v.string()),
@@ -37,28 +51,59 @@ function buildGeminiResponseSchema() {
         type: Type.STRING,
         nullable: true,
         description:
-          "Client business or organization name if clearly stated. Use null if unclear.",
+          "Client business, organization, or location name if clearly stated. Use null if unclear.",
       },
-      conciseTaskTitle: {
+      emailSubject: {
+        type: Type.STRING,
+        nullable: true,
+        description:
+          "The original email subject line if present in the message. Remove only leading prefixes: Re:, RE:, Fwd:, FW:. Do not rewrite or summarize the subject. Use null if no subject line exists.",
+      },
+      generatedTaskTitle: {
         type: Type.STRING,
         description:
-          "Short action-oriented task title without the business prefix.",
+          "Short action-oriented fallback task title without business prefix. Only used when no email subject exists. Do not include the business name here.",
+      },
+      sourceType: {
+        type: Type.STRING,
+        enum: [...AI_TASK_INTAKE_SOURCE_TYPES],
+        description:
+          "Source type: 'pasted_email' if message has email headers (Subject/From/To/Date), 'pasted_message' if plain text with no email headers, 'screenshot' if image only, 'mixed' if image and text are both present.",
+      },
+      sourceUrls: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description:
+          "Directly relevant URLs found in the message or screenshot. Only include URLs that are part of the client request. Do not invent URLs.",
+      },
+      senderName: {
+        type: Type.STRING,
+        nullable: true,
+        description:
+          "Sender's name only if explicitly visible in the message headers or signature. Use null otherwise.",
+      },
+      senderEmail: {
+        type: Type.STRING,
+        nullable: true,
+        description:
+          "Sender's email address only if explicitly visible in the message headers. Use null otherwise.",
       },
       summary: {
         type: Type.STRING,
-        description: "Worker-friendly summary of the client request.",
+        description:
+          "Worker-friendly summary of the client request in 1–3 short sentences. Do not include section headings.",
       },
       requestedChanges: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
         description:
-          "Concrete actionable changes. If a change involves code, include the verbatim snippet as a fenced code block (with language tag) on a new line within that item string.",
+          "Concrete actionable changes. If a change involves code, include the verbatim snippet as a fenced code block (with language tag) on a new line within that item string. Do not include section headings.",
       },
       workerNotes: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
         description:
-          "Cautions, context, URLs, or follow-up notes for the worker. Use markdown links and inline code when helpful.",
+          "Cautions, context, or follow-up notes for the worker. Use markdown links and inline code when helpful. Do not include section headings.",
       },
       extractedClientMessage: {
         type: Type.STRING,
@@ -92,7 +137,12 @@ function buildGeminiResponseSchema() {
     },
     required: [
       "businessName",
-      "conciseTaskTitle",
+      "emailSubject",
+      "generatedTaskTitle",
+      "sourceType",
+      "sourceUrls",
+      "senderName",
+      "senderEmail",
       "summary",
       "requestedChanges",
       "workerNotes",
@@ -119,7 +169,7 @@ function buildPrompt(
 
   const sourceInstructions = input.hasImage
     ? input.rawMessage
-      ? "Use both the pasted text and the attached screenshot. Prefer the pasted text for originalClientMessage when provided."
+      ? "Use both the pasted text and the attached screenshot. Prefer the pasted text for extractedClientMessage when provided."
       : "The client request is in the attached screenshot. Read all visible text carefully and extract the client message verbatim into extractedClientMessage."
     : "The client request is in the pasted message below.";
 
@@ -129,11 +179,16 @@ function buildPrompt(
     "- Use only facts present in the client message or screenshot.",
     "- Do not invent business names, URLs, due dates, priorities, or requirements.",
     "- If something is unclear, leave fields empty/null and add an item to missingInfo.",
-    "- requestedChanges must be concrete, actionable bullet points.",
+    "- requestedChanges must be concrete, actionable bullet points. Do not include section headings.",
     "- If a requestedChanges item involves specific code (HTML, CSS, JS, config, etc.), include the verbatim snippet as a fenced code block with a language tag on a new line within that same item.",
-    "- workerNotes should include cautions, dependencies, URLs, or follow-ups. Use [label](url) for URLs and inline `backticks` for short code references.",
-    "- summary should be 1–3 short sentences of worker-friendly prose. Do not repeat requestedChanges.",
+    "- workerNotes should include cautions, dependencies, or follow-ups. Use [label](url) for URLs and inline `backticks` for short code references. Do not include section headings.",
+    "- summary should be 1–3 short sentences of worker-friendly prose. Do not repeat requestedChanges. Do not include section headings.",
     "- extractedClientMessage must be the verbatim client text with original line breaks preserved. Do not add markdown, fenced blocks, or any transformation.",
+    "- emailSubject: if a Subject: line exists in the message, copy it exactly but remove only leading prefixes (Re:, RE:, Fwd:, FW:) and their whitespace. Do not rewrite or summarize the subject. The app will use this directly as the task title when present.",
+    "- generatedTaskTitle: only provide a short action-oriented fallback title when NO email subject exists. When an emailSubject is provided, this field is still required but will not be used for the title.",
+    "- sourceUrls: extract only URLs that are part of the client request. Do not include URLs from email headers (like unsubscribe links). Do not invent URLs.",
+    "- senderName and senderEmail: extract only if explicitly visible in message headers or a signature. Use null otherwise.",
+    "- sourceType: set to 'pasted_email' if the message has email headers (Subject/From/To/Date), 'pasted_message' if plain text with no headers, 'screenshot' if image only, 'mixed' if image and text are both present.",
     "- labels are suggestions only; prefer existing labels when they fit.",
     "- dueDate must be YYYY-MM-DD or null.",
     "- priority must be one of: no-priority, low, medium, high, urgent.",
@@ -192,29 +247,56 @@ function normalizeDueDate(value: string | null): string | null {
   return trimmed;
 }
 
-function buildTaskTitle(
+function cleanEmailSubject(subject: string | null): string | null {
+  if (!subject) return null;
+  let cleaned = subject.trim();
+  // Strip repeated prefixes: "Re: Re: FW: Subject" → "Subject"
+  let prev = "";
+  while (prev !== cleaned) {
+    prev = cleaned;
+    cleaned = cleaned.replace(EMAIL_SUBJECT_PREFIX_PATTERN, "").trim();
+  }
+  return cleaned || null;
+}
+
+function titleStartsWithBusinessName(
+  titleBase: string,
+  businessName: string,
+): boolean {
+  const normalizedTitle = titleBase.toLowerCase();
+  const normalizedBusiness = businessName.toLowerCase();
+  if (!normalizedTitle.startsWith(normalizedBusiness)) return false;
+  // Allow the match only when it is at a word boundary — i.e. the title is
+  // exactly the business name, or the next character is a space or colon.
+  const charAfter = normalizedTitle[normalizedBusiness.length];
+  return charAfter === undefined || charAfter === " " || charAfter === ":";
+}
+
+function buildDeterministicTitle(
   businessName: string | null,
-  conciseTaskTitle: string,
-): { title: string; businessName: string | null } {
-  const normalizedTitle = conciseTaskTitle.trim();
-  if (!normalizedTitle) {
-    throw new HTTPException(502, {
-      message: "AI task intake returned an empty task title",
-    });
+  emailSubject: string | null,
+  generatedTaskTitle: string,
+): string {
+  const cleanedSubject = cleanEmailSubject(emailSubject);
+  const fallbackTitle = generatedTaskTitle.trim() || "New client request";
+  const titleBase = cleanedSubject || fallbackTitle;
+
+  if (businessName && !titleStartsWithBusinessName(titleBase, businessName)) {
+    return `${businessName}: ${titleBase}`;
   }
 
-  const normalizedBusinessName = businessName?.trim() || null;
-  if (normalizedBusinessName) {
-    return {
-      title: `${normalizedBusinessName}: ${normalizedTitle}`,
-      businessName: normalizedBusinessName,
-    };
-  }
+  return titleBase;
+}
 
-  return {
-    title: `Client: ${normalizedTitle}`,
-    businessName: null,
-  };
+function resolveSourceType(
+  geminiSourceType: AiTaskIntakeSourceType,
+  imageOnly: boolean,
+  hasImage: boolean,
+  hasRawMessage: boolean,
+): AiTaskIntakeSourceType {
+  if (imageOnly) return "screenshot";
+  if (hasImage && hasRawMessage) return "mixed";
+  return geminiSourceType;
 }
 
 function resolveOriginalClientMessage(
@@ -242,16 +324,42 @@ function sanitizeModelOutput(
   output: GeminiDraftOutput,
   rawMessage: string,
   imageOnly: boolean,
+  hasImage: boolean,
 ): AiTaskIntakeResult {
   const { priority } = coercePriority(output.priority);
-  const { title, businessName } = buildTaskTitle(
-    output.businessName,
-    output.conciseTaskTitle,
+
+  const businessName = output.businessName?.trim() || null;
+  const emailSubject = output.emailSubject?.trim() || null;
+  const generatedTaskTitle = output.generatedTaskTitle?.trim() || "";
+
+  if (!generatedTaskTitle && !emailSubject) {
+    throw new HTTPException(502, {
+      message: "AI task intake returned an empty task title",
+    });
+  }
+
+  const title = buildDeterministicTitle(
+    businessName,
+    emailSubject,
+    generatedTaskTitle,
+  );
+
+  const sourceType = resolveSourceType(
+    output.sourceType,
+    imageOnly,
+    hasImage,
+    Boolean(rawMessage),
   );
 
   return {
     title,
     businessName,
+    emailSubject: cleanEmailSubject(emailSubject),
+    generatedTaskTitle: generatedTaskTitle || null,
+    sourceType,
+    sourceUrls: normalizeStringArray(output.sourceUrls),
+    senderName: output.senderName?.trim() || null,
+    senderEmail: output.senderEmail?.trim() || null,
     summary: output.summary.trim(),
     requestedChanges: normalizeStringArray(output.requestedChanges),
     workerNotes: normalizeStringArray(output.workerNotes),
@@ -347,6 +455,7 @@ export async function generateTaskIntakeDraft(
       validatedOutput,
       validatedInput.rawMessage,
       imageOnly,
+      geminiInput.hasImage,
     );
   } catch (error) {
     if (abortController.signal.aborted) {

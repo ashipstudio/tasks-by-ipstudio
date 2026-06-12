@@ -1,13 +1,14 @@
 import { HTTPException } from "hono/http-exception";
 import {
   AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES,
+  AI_TASK_INTAKE_MAX_IMAGES,
   type AiTaskIntakeImageInput,
   type AiTaskIntakeInput,
 } from "./types/ai-task-intake";
 
 export type ValidatedAiTaskIntakeInput = {
   rawMessage: string;
-  image?: AiTaskIntakeImageInput;
+  images: AiTaskIntakeImageInput[];
   projectName?: string;
   workspaceName?: string;
   existingLabels?: string[];
@@ -36,7 +37,10 @@ function getBase64ByteLength(base64: string): number {
 function validateImage(
   image: AiTaskIntakeImageInput,
   maxImageBytes: number,
+  index: number,
 ): AiTaskIntakeImageInput {
+  const label = `Image ${index + 1}`;
+
   const mimeType = image.mimeType.trim().toLowerCase();
   if (
     !AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES.includes(
@@ -44,33 +48,33 @@ function validateImage(
     )
   ) {
     throw new HTTPException(400, {
-      message: "Image must be PNG, JPEG, or WebP",
+      message: `${label} must be PNG, JPEG, or WebP`,
     });
   }
 
   const data = stripBase64Prefix(image.data.trim());
   if (!data) {
     throw new HTTPException(400, {
-      message: "Image data is required",
+      message: `${label} data is required`,
     });
   }
 
   if (!/^[A-Za-z0-9+/=]+$/.test(data)) {
     throw new HTTPException(400, {
-      message: "Image data must be valid base64",
+      message: `${label} data must be valid base64`,
     });
   }
 
   const byteLength = getBase64ByteLength(data);
   if (byteLength <= 0) {
     throw new HTTPException(400, {
-      message: "Image data is required",
+      message: `${label} data is required`,
     });
   }
 
   if (byteLength > maxImageBytes) {
     throw new HTTPException(400, {
-      message: `Image exceeds the maximum size of ${maxImageBytes} bytes`,
+      message: `${label} exceeds the maximum size of ${maxImageBytes} bytes`,
     });
   }
 
@@ -86,9 +90,10 @@ export function validateAiTaskIntakeInput(
 ): ValidatedAiTaskIntakeInput {
   const rawMessage = input.rawMessage?.trim() ?? "";
   const hasText = rawMessage.length > 0;
-  const hasImage = Boolean(input.image?.data?.trim());
+  const rawImages = input.images ?? [];
+  const hasImages = rawImages.length > 0;
 
-  if (!hasText && !hasImage) {
+  if (!hasText && !hasImages) {
     throw new HTTPException(400, {
       message: "Either a client message or an image is required",
     });
@@ -100,16 +105,19 @@ export function validateAiTaskIntakeInput(
     });
   }
 
-  const validatedImage = hasImage
-    ? validateImage(
-        input.image as AiTaskIntakeImageInput,
-        options.maxImageBytes,
-      )
-    : undefined;
+  if (rawImages.length > AI_TASK_INTAKE_MAX_IMAGES) {
+    throw new HTTPException(400, {
+      message: `A maximum of ${AI_TASK_INTAKE_MAX_IMAGES} screenshots can be submitted`,
+    });
+  }
+
+  const validatedImages = rawImages.map((img, i) =>
+    validateImage(img, options.maxImageBytes, i),
+  );
 
   return {
     rawMessage,
-    image: validatedImage,
+    images: validatedImages,
     projectName: input.projectName,
     workspaceName: input.workspaceName,
     existingLabels: input.existingLabels,

@@ -636,11 +636,13 @@ function CreateTaskModal({
     description: string;
     priority: Priority;
     dueDate?: Date;
+    startDate?: Date;
   }) => {
     setTitle(draft.title);
     setDescription(draft.description);
     setPriority(draft.priority);
     setDueDate(draft.dueDate);
+    setStartDate(draft.startDate);
   };
 
   return (

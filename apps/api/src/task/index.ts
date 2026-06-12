@@ -47,12 +47,15 @@ const aiTaskIntakeImageSchema = v.object({
 const aiTaskIntakeDraftBodySchema = v.pipe(
   v.object({
     rawMessage: v.optional(v.string()),
+    images: v.optional(v.array(aiTaskIntakeImageSchema)),
     image: v.optional(aiTaskIntakeImageSchema),
   }),
   v.check(
     (value) =>
-      Boolean(value.rawMessage?.trim()) || Boolean(value.image?.data?.trim()),
-    "Either rawMessage or image must be provided",
+      Boolean(value.rawMessage?.trim()) ||
+      (Array.isArray(value.images) && value.images.length > 0) ||
+      Boolean(value.image?.data?.trim()),
+    "Either rawMessage or at least one image is required",
   ),
 );
 
@@ -234,7 +237,12 @@ const task = new Hono<{
 
       const draft = await generateTaskIntakeDraft({
         rawMessage: body.rawMessage,
-        image: body.image,
+        images:
+          body.images && body.images.length > 0
+            ? body.images
+            : body.image
+              ? [body.image]
+              : undefined,
       });
 
       return c.json(draft);

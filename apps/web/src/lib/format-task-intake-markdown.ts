@@ -55,6 +55,14 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   mixed: "Mixed (text + screenshot)",
 };
 
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  "no-priority": "No priority",
+};
+
 function buildTaskContextSection(
   draft: GenerateTaskIntakeDraftResponse,
 ): string | null {
@@ -87,6 +95,23 @@ function buildTaskContextSection(
 
   if (draft.senderEmail) {
     lines.push(`- **Sender email:** ${draft.senderEmail}`);
+  }
+
+  if (draft.dueDate) {
+    lines.push(`- **Due Date:** ${draft.dueDate}`);
+  }
+
+  if (draft.dueDateReason) {
+    lines.push(`- **Due Date Reason:** ${draft.dueDateReason}`);
+  }
+
+  if (draft.priority && draft.priority !== "no-priority") {
+    const priorityLabel = PRIORITY_LABELS[draft.priority] ?? draft.priority;
+    lines.push(`- **Priority:** ${priorityLabel}`);
+  }
+
+  if (draft.priorityReason) {
+    lines.push(`- **Priority Reason:** ${draft.priorityReason}`);
   }
 
   if (lines.length === 0) return null;

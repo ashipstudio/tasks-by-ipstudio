@@ -6,12 +6,14 @@ import {
   Loader2,
   Plus,
   Search,
+  Sparkles,
   Tag,
   UserIcon,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import ClientMessageIntakeModal from "@/components/shared/modals/client-message-intake-modal";
 import TaskDescriptionEditor from "@/components/task/task-description-editor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +43,7 @@ import useCreateLabel from "@/hooks/mutations/label/use-create-label";
 import useCreateTask from "@/hooks/mutations/task/use-create-task";
 import { useDeleteTask } from "@/hooks/mutations/task/use-delete-task";
 import { useUpdateTask } from "@/hooks/mutations/task/use-update-task";
+import useGetConfig from "@/hooks/queries/config/use-get-config";
 import useGetLabelsByWorkspace from "@/hooks/queries/label/use-get-labels-by-workspace";
 import useActiveWorkspace from "@/hooks/queries/workspace/use-active-workspace";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
@@ -101,6 +104,48 @@ function normalizeTask(
     labels: task.labels ?? [],
     externalLinks: task.externalLinks ?? [],
   };
+}
+
+type AiIntakeTriggerButtonProps = {
+  disabled?: boolean;
+  onClick: () => void;
+};
+
+function AiIntakeTriggerButton({
+  disabled,
+  onClick,
+}: AiIntakeTriggerButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-transparent font-medium outline-none transition-all sm:text-sm",
+        "h-8 px-[calc(--spacing(2.5)-1px)] text-sm",
+        "text-foreground",
+        !disabled && [
+          "kaneo-ai-btn",
+          "shadow-[0_0_8px_-3px_rgba(103,232,249,0.25),0_0_8px_-3px_rgba(167,139,250,0.25),0_0_8px_-3px_rgba(240,171,252,0.2)]",
+          "dark:shadow-[0_0_10px_-2px_rgba(103,232,249,0.3),0_0_10px_-2px_rgba(167,139,250,0.3),0_0_10px_-2px_rgba(240,171,252,0.25)]",
+          "hover:shadow-[0_0_14px_-2px_rgba(103,232,249,0.4),0_0_14px_-2px_rgba(167,139,250,0.38),0_0_14px_-2px_rgba(240,171,252,0.35)]",
+          "hover:dark:shadow-[0_0_18px_-2px_rgba(103,232,249,0.45),0_0_18px_-2px_rgba(167,139,250,0.42),0_0_18px_-2px_rgba(240,171,252,0.38)]",
+          "hover:-translate-y-px",
+          "active:translate-y-0 active:scale-[0.97] active:shadow-none active:opacity-80",
+        ],
+        disabled && "cursor-not-allowed opacity-50",
+      )}
+    >
+      <Sparkles
+        aria-hidden
+        className={cn(
+          "size-3.5 text-violet-400 dark:text-violet-300",
+          !disabled && "motion-safe:animate-pulse",
+        )}
+      />
+      <span>Draft with AI</span>
+    </button>
+  );
 }
 
 function CreateTaskModal({
@@ -186,6 +231,9 @@ function CreateTaskModal({
   const [labels, setLabels] = useState<Label[]>([]);
   const [draftTask, setDraftTask] = useState<Task | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+
+  const { data: config } = useGetConfig();
 
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelsStep, setLabelsStep] = useState<PopoverStep>("select");
@@ -583,474 +631,502 @@ function CreateTaskModal({
     setLabels(labels.filter((l) => l.name !== labelName));
   };
 
+  const handleApplyIntakeDraft = (draft: {
+    title: string;
+    description: string;
+    priority: Priority;
+    dueDate?: Date;
+  }) => {
+    setTitle(draft.title);
+    setDescription(draft.description);
+    setPriority(draft.priority);
+    setDueDate(draft.dueDate);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        className="kaneo-create-task-modal max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
-        showCloseButton={false}
-      >
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle asChild>
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem className="text-muted-foreground font-semibold tracking-wider text-sm">
-                  {project?.slug?.toUpperCase() ||
-                    t("common:modals.createTask.breadcrumbTask")}
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem className="text-foreground font-medium text-sm">
-                  {t("common:modals.createTask.title")}
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            {t("common:modals.createTask.description")}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col flex-1 min-h-0 space-y-6"
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent
+          className="kaneo-create-task-modal max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          showCloseButton={false}
         >
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-6 px-6">
-            <Input
-              unstyled
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-              placeholder={t("common:modals.createTask.taskTitlePlaceholder")}
-              className="w-full [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:px-0 [&_[data-slot=input]]:py-3 [&_[data-slot=input]]:text-2xl [&_[data-slot=input]]:leading-tight [&_[data-slot=input]]:font-semibold [&_[data-slot=input]]:tracking-tight [&_[data-slot=input]]:text-foreground [&_[data-slot=input]]:placeholder:text-muted-foreground [&_[data-slot=input]]:outline-none"
-              required
-            />
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle asChild>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem className="text-muted-foreground font-semibold tracking-wider text-sm">
+                    {project?.slug?.toUpperCase() ||
+                      t("common:modals.createTask.breadcrumbTask")}
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem className="text-foreground font-medium text-sm">
+                    {t("common:modals.createTask.title")}
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              {t("common:modals.createTask.description")}
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="min-h-[200px]">
-              <TaskDescriptionEditor
-                value={description}
-                onChange={setDescription}
-                placeholder={t(
-                  "common:modals.createTask.descriptionPlaceholder",
-                )}
-                taskId={draftTask?.id}
-                ensureTaskId={ensureDraftTask}
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col flex-1 min-h-0 space-y-6"
+          >
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-6 px-6">
+              <Input
+                unstyled
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                autoFocus
+                placeholder={t("common:modals.createTask.taskTitlePlaceholder")}
+                className="w-full [&_[data-slot=input]]:h-auto [&_[data-slot=input]]:px-0 [&_[data-slot=input]]:py-3 [&_[data-slot=input]]:text-2xl [&_[data-slot=input]]:leading-tight [&_[data-slot=input]]:font-semibold [&_[data-slot=input]]:tracking-tight [&_[data-slot=input]]:text-foreground [&_[data-slot=input]]:placeholder:text-muted-foreground [&_[data-slot=input]]:outline-none"
+                required
               />
-            </div>
 
-            {labels.length > 0 && (
-              <div className="flex flex-wrap mb-2">
-                {labels.map((label) => (
-                  <Badge
-                    key={label.name}
-                    color={label.color}
-                    variant="outline"
-                    className="flex items-center gap-1 pl-3 cursor-pointer hover:bg-accent/50 transition-colors"
-                    onClick={() => removeLabel(label.name)}
-                  >
-                    <span
-                      className="inline-block w-2 h-2 mr-1.5 rounded-full"
-                      style={{
-                        backgroundColor:
-                          labelColors.find((c) => c.value === label.color)
-                            ?.color || "var(--color-neutral-400)",
-                      }}
-                    />
-                    <span className="relative max-w-20 -top-0.5 truncate">
-                      {label.name}
-                    </span>
-                  </Badge>
-                ))}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2 py-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-accent/50 text-foreground rounded-md text-xs font-medium border border-border">
-                <div className="w-1.5 h-1.5 bg-foreground rounded-full" />
-                {statusLabel}
-              </div>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      startDate
-                        ? "bg-accent/30 text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <CalendarIcon className="w-3.5 h-3.5" />
-                    <span>
-                      {startDate
-                        ? formatDateMedium(startDate)
-                        : t("common:modals.createTask.startDate")}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={startDate}
-                    onSelect={setStartDate}
-                    className="w-full bg-popover"
-                  />
-                  {startDate && (
-                    <div className="p-2 border-t border-border">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs"
-                        onClick={() => setStartDate(undefined)}
-                      >
-                        {t("common:modals.createTask.clearStartDate")}
-                      </Button>
-                    </div>
+              <div className="min-h-[200px]">
+                <TaskDescriptionEditor
+                  value={description}
+                  onChange={setDescription}
+                  placeholder={t(
+                    "common:modals.createTask.descriptionPlaceholder",
                   )}
-                </PopoverContent>
-              </Popover>
+                  taskId={draftTask?.id}
+                  ensureTaskId={ensureDraftTask}
+                />
+              </div>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      priority !== "no-priority"
-                        ? "bg-accent/30 text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {getPriorityIcon(priority)}
-                    <span>
-                      {selectedPriority
-                        ? selectedPriority.label
-                        : t("common:modals.createTask.priority")}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-1" align="start">
-                  <div className="space-y-1">
-                    {priorityOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
-                        onClick={() => setPriority(option.value as Priority)}
-                      >
-                        {getPriorityIcon(option.value)}
-                        <span className="text-sm">{option.label}</span>
-                        {priority === option.value && (
-                          <Check className="ml-auto h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {labels.length > 0 && (
+                <div className="flex flex-wrap mb-2">
+                  {labels.map((label) => (
+                    <Badge
+                      key={label.name}
+                      color={label.color}
+                      variant="outline"
+                      className="flex items-center gap-1 pl-3 cursor-pointer hover:bg-accent/50 transition-colors"
+                      onClick={() => removeLabel(label.name)}
+                    >
+                      <span
+                        className="inline-block w-2 h-2 mr-1.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            labelColors.find((c) => c.value === label.color)
+                              ?.color || "var(--color-neutral-400)",
+                        }}
+                      />
+                      <span className="relative max-w-20 -top-0.5 truncate">
+                        {label.name}
+                      </span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      selectedUser
-                        ? "bg-accent/30 text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {selectedUser ? (
-                      <>
-                        <Avatar className="h-4 w-4">
-                          <AvatarImage
-                            src={selectedUser?.user?.image ?? ""}
-                            alt={selectedUser?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-[10px] font-medium border border-border/30">
-                            {selectedUser?.user?.name
-                              ?.charAt(0)
-                              .toUpperCase() || "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span>{selectedUser.user?.name}</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserIcon className="w-3.5 h-3.5" />
-                        <span>{t("common:modals.createTask.assign")}</span>
-                      </>
-                    )}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48 p-1" align="start">
-                  <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2 py-2">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-accent/50 text-foreground rounded-md text-xs font-medium border border-border">
+                  <div className="w-1.5 h-1.5 bg-foreground rounded-full" />
+                  {statusLabel}
+                </div>
+
+                <Popover>
+                  <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
-                      onClick={() => setAssigneeId("")}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
+                        startDate
+                          ? "bg-accent/30 text-foreground"
+                          : "text-muted-foreground",
+                      )}
                     >
-                      <div
-                        className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
-                        title={t(
-                          "common:modals.createTask.assignUnassignedTitle",
-                        )}
-                      >
-                        <span className="text-[10px] font-medium text-muted-foreground">
-                          ?
-                        </span>
-                      </div>
-                      <span className="text-sm">
-                        {t("common:modals.createTask.assignUnassigned")}
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <span>
+                        {startDate
+                          ? formatDateMedium(startDate)
+                          : t("common:modals.createTask.startDate")}
                       </span>
-                      {!assigneeId && <Check className="ml-auto h-4 w-4" />}
                     </button>
-                    {workspaceUsers?.members?.map((member) => (
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={startDate}
+                      onSelect={setStartDate}
+                      className="w-full bg-popover"
+                    />
+                    {startDate && (
+                      <div className="p-2 border-t border-border">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs"
+                          onClick={() => setStartDate(undefined)}
+                        >
+                          {t("common:modals.createTask.clearStartDate")}
+                        </Button>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
+                        priority !== "no-priority"
+                          ? "bg-accent/30 text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {getPriorityIcon(priority)}
+                      <span>
+                        {selectedPriority
+                          ? selectedPriority.label
+                          : t("common:modals.createTask.priority")}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-1" align="start">
+                    <div className="space-y-1">
+                      {priorityOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
+                          onClick={() => setPriority(option.value as Priority)}
+                        >
+                          {getPriorityIcon(option.value)}
+                          <span className="text-sm">{option.label}</span>
+                          {priority === option.value && (
+                            <Check className="ml-auto h-4 w-4" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
+                        selectedUser
+                          ? "bg-accent/30 text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {selectedUser ? (
+                        <>
+                          <Avatar className="h-4 w-4">
+                            <AvatarImage
+                              src={selectedUser?.user?.image ?? ""}
+                              alt={selectedUser?.user?.name || ""}
+                            />
+                            <AvatarFallback className="text-[10px] font-medium border border-border/30">
+                              {selectedUser?.user?.name
+                                ?.charAt(0)
+                                .toUpperCase() || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{selectedUser.user?.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserIcon className="w-3.5 h-3.5" />
+                          <span>{t("common:modals.createTask.assign")}</span>
+                        </>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-1" align="start">
+                    <div className="space-y-1">
                       <button
-                        key={member.userId}
                         type="button"
                         className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
-                        onClick={() => setAssigneeId(member.userId || "")}
+                        onClick={() => setAssigneeId("")}
                       >
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage
-                            src={member?.user?.image ?? ""}
-                            alt={member?.user?.name || ""}
-                          />
-                          <AvatarFallback className="text-xs font-medium border border-border/30">
-                            {member?.user?.name?.charAt(0).toUpperCase() || "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm">{member?.user?.name}</span>
-                        {assigneeId === member.userId && (
-                          <Check className="ml-auto h-4 w-4" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      dueDate
-                        ? "bg-accent/30 text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <CalendarIcon className="w-3.5 h-3.5" />
-                    <span>
-                      {dueDate
-                        ? formatDateMedium(dueDate)
-                        : t("common:modals.createTask.dueDate")}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={dueDate}
-                    onSelect={setDueDate}
-                    className="w-full bg-popover"
-                  />
-                  {dueDate && (
-                    <div className="p-2 border-t border-border">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full text-xs"
-                        onClick={() => setDueDate(undefined)}
-                      >
-                        {t("common:modals.createTask.clearDueDate")}
-                      </Button>
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
-
-              <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
-                      labels.length > 0
-                        ? "bg-accent/30 text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <Tag className="w-3.5 h-3.5" />
-                    <span>{t("common:modals.createTask.labels")}</span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="p-0" align="start">
-                  {labelsStep === "select" && (
-                    <div className="w-auto">
-                      <div className="flex items-center gap-2 p-2 border-b border-border">
-                        <Search className="w-3 h-3 text-muted-foreground" />
-                        <input
-                          ref={searchInputRef}
-                          value={searchValue}
-                          onChange={(e) => setSearchValue(e.target.value)}
-                          placeholder={t(
-                            "common:modals.createTask.searchLabels",
+                        <div
+                          className="w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center"
+                          title={t(
+                            "common:modals.createTask.assignUnassignedTitle",
                           )}
-                          className="w-full bg-transparent border-none text-foreground text-xs focus:outline-none placeholder:text-muted-foreground"
-                        />
-                      </div>
-
-                      <div className="py-1">
-                        {filteredLabels.length === 0 &&
-                          searchValue.length === 0 && (
-                            <span className="text-xs text-muted-foreground px-2">
-                              {t("common:modals.createTask.noLabelsFound")}
-                            </span>
-                          )}
-                        {filteredLabels.map((label) => (
-                          <button
-                            key={label.id}
-                            type="button"
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left"
-                            onClick={() => toggleLabel(label.name)}
-                          >
-                            <div className="flex-shrink-0 w-3 flex justify-center">
-                              {labels.some((l) => l.name === label.name) && (
-                                <Check className="w-3 h-3" />
-                              )}
-                            </div>
-                            <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{
-                                backgroundColor:
-                                  labelColors.find(
-                                    (c) => c.value === label.color,
-                                  )?.color || "var(--color-neutral-400)",
-                              }}
-                            />
-                            <span className="relative max-w-20 truncate -top-0.5">
-                              {label.name}
-                            </span>
-                          </button>
-                        ))}
-
-                        {isCreatingNewLabel && filteredLabels.length > 0 && (
-                          <div className="border-t border-border my-1" />
-                        )}
-                        {isCreatingNewLabel && (
-                          <button
-                            type="button"
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left"
-                            onClick={handleCreateNewClick}
-                          >
-                            <div className="flex-shrink-0 w-3 flex justify-center">
-                              <Plus className="w-3 h-3" />
-                            </div>
-                            <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{
-                                backgroundColor:
-                                  labelColors.find(
-                                    (c) => c.value === selectedColor,
-                                  )?.color || "var(--color-neutral-400)",
-                              }}
-                            />
-                            <span className="truncate">
-                              {t("common:modals.createTask.createLabel", {
-                                name: searchValue,
-                              })}
-                            </span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {labelsStep === "color" && (
-                    <div className="w-auto">
-                      <div className="flex items-center justify-between p-2 border-b border-border">
-                        <span className="text-xs font-medium">
-                          {t("common:modals.createTask.chooseColor")}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setLabelsStep("select")}
-                          className="w-4 h-4 flex items-center justify-center hover:bg-accent/50 rounded"
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-
-                      <div className="py-1">
-                        {labelColors.map((color) => (
-                          <button
-                            key={color.value}
-                            type="button"
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left",
-                              selectedColor === color.value && "bg-accent/30",
-                            )}
-                            onClick={() =>
-                              handleColorSelect(color.value as LabelColor)
-                            }
-                          >
-                            <span
-                              className="w-2 h-2 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: color.color }}
+                          <span className="text-[10px] font-medium text-muted-foreground">
+                            ?
+                          </span>
+                        </div>
+                        <span className="text-sm">
+                          {t("common:modals.createTask.assignUnassigned")}
+                        </span>
+                        {!assigneeId && <Check className="ml-auto h-4 w-4" />}
+                      </button>
+                      {workspaceUsers?.members?.map((member) => (
+                        <button
+                          key={member.userId}
+                          type="button"
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent/50 text-left transition-colors h-8"
+                          onClick={() => setAssigneeId(member.userId || "")}
+                        >
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage
+                              src={member?.user?.image ?? ""}
+                              alt={member?.user?.name || ""}
                             />
-                            <span className="truncate">{color.label}</span>
-                            {selectedColor === color.value && (
-                              <Check className="w-3 h-3 ml-auto" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
+                            <AvatarFallback className="text-xs font-medium border border-border/30">
+                              {member?.user?.name?.charAt(0).toUpperCase() ||
+                                "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{member?.user?.name}</span>
+                          {assigneeId === member.userId && (
+                            <Check className="ml-auto h-4 w-4" />
+                          )}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
+                  </PopoverContent>
+                </Popover>
 
-          <DialogFooter className="flex-shrink-0 border-t border-border bg-background px-6 py-4">
-            <div className="flex items-center gap-3 mr-auto">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                <input
-                  type="checkbox"
-                  checked={createMore}
-                  onChange={(e) => setCreateMore(e.target.checked)}
-                  className="rounded border-border bg-background text-primary focus:ring-ring focus:ring-offset-0 focus:ring-2 transition-all"
-                />
-                {t("common:modals.createTask.createMore")}
-              </label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
+                        dueDate
+                          ? "bg-accent/30 text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <span>
+                        {dueDate
+                          ? formatDateMedium(dueDate)
+                          : t("common:modals.createTask.dueDate")}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={dueDate}
+                      onSelect={setDueDate}
+                      className="w-full bg-popover"
+                    />
+                    {dueDate && (
+                      <div className="p-2 border-t border-border">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs"
+                          onClick={() => setDueDate(undefined)}
+                        >
+                          {t("common:modals.createTask.clearDueDate")}
+                        </Button>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+
+                <Popover open={labelsOpen} onOpenChange={setLabelsOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors border border-border hover:bg-accent/50",
+                        labels.length > 0
+                          ? "bg-accent/30 text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      <Tag className="w-3.5 h-3.5" />
+                      <span>{t("common:modals.createTask.labels")}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0" align="start">
+                    {labelsStep === "select" && (
+                      <div className="w-auto">
+                        <div className="flex items-center gap-2 p-2 border-b border-border">
+                          <Search className="w-3 h-3 text-muted-foreground" />
+                          <input
+                            ref={searchInputRef}
+                            value={searchValue}
+                            onChange={(e) => setSearchValue(e.target.value)}
+                            placeholder={t(
+                              "common:modals.createTask.searchLabels",
+                            )}
+                            className="w-full bg-transparent border-none text-foreground text-xs focus:outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+
+                        <div className="py-1">
+                          {filteredLabels.length === 0 &&
+                            searchValue.length === 0 && (
+                              <span className="text-xs text-muted-foreground px-2">
+                                {t("common:modals.createTask.noLabelsFound")}
+                              </span>
+                            )}
+                          {filteredLabels.map((label) => (
+                            <button
+                              key={label.id}
+                              type="button"
+                              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left"
+                              onClick={() => toggleLabel(label.name)}
+                            >
+                              <div className="flex-shrink-0 w-3 flex justify-center">
+                                {labels.some((l) => l.name === label.name) && (
+                                  <Check className="w-3 h-3" />
+                                )}
+                              </div>
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{
+                                  backgroundColor:
+                                    labelColors.find(
+                                      (c) => c.value === label.color,
+                                    )?.color || "var(--color-neutral-400)",
+                                }}
+                              />
+                              <span className="relative max-w-20 truncate -top-0.5">
+                                {label.name}
+                              </span>
+                            </button>
+                          ))}
+
+                          {isCreatingNewLabel && filteredLabels.length > 0 && (
+                            <div className="border-t border-border my-1" />
+                          )}
+                          {isCreatingNewLabel && (
+                            <button
+                              type="button"
+                              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left"
+                              onClick={handleCreateNewClick}
+                            >
+                              <div className="flex-shrink-0 w-3 flex justify-center">
+                                <Plus className="w-3 h-3" />
+                              </div>
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{
+                                  backgroundColor:
+                                    labelColors.find(
+                                      (c) => c.value === selectedColor,
+                                    )?.color || "var(--color-neutral-400)",
+                                }}
+                              />
+                              <span className="truncate">
+                                {t("common:modals.createTask.createLabel", {
+                                  name: searchValue,
+                                })}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {labelsStep === "color" && (
+                      <div className="w-auto">
+                        <div className="flex items-center justify-between p-2 border-b border-border">
+                          <span className="text-xs font-medium">
+                            {t("common:modals.createTask.chooseColor")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLabelsStep("select")}
+                            className="w-4 h-4 flex items-center justify-center hover:bg-accent/50 rounded"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+
+                        <div className="py-1">
+                          {labelColors.map((color) => (
+                            <button
+                              key={color.value}
+                              type="button"
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent/50 text-left",
+                                selectedColor === color.value && "bg-accent/30",
+                              )}
+                              onClick={() =>
+                                handleColorSelect(color.value as LabelColor)
+                              }
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: color.color }}
+                              />
+                              <span className="truncate">{color.label}</span>
+                              {selectedColor === color.value && (
+                                <Check className="w-3 h-3 ml-auto" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
 
-            <Button
-              type="button"
-              onClick={handleClose}
-              variant="outline"
-              size="sm"
-              className="border-border text-foreground hover:bg-accent"
-              disabled={isSubmitting}
-            >
-              {t("common:actions.cancel")}
-            </Button>
-            <Button
-              type="submit"
-              disabled={!title.trim() || isSubmitting}
-              size="sm"
-              className="gap-2 disabled:opacity-50"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t("common:modals.createTask.createButton")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <DialogFooter className="flex-shrink-0 border-t border-border bg-background px-6 py-4">
+              <div className="flex flex-wrap items-center gap-3 mr-auto">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={createMore}
+                    onChange={(e) => setCreateMore(e.target.checked)}
+                    className="rounded border-border bg-background text-primary focus:ring-ring focus:ring-offset-0 focus:ring-2 transition-all"
+                  />
+                  {t("common:modals.createTask.createMore")}
+                </label>
+                {config?.hasAiTaskIntake && (
+                  <AiIntakeTriggerButton
+                    onClick={() => setIntakeModalOpen(true)}
+                    disabled={isSubmitting || !resolvedProjectId}
+                  />
+                )}
+              </div>
+
+              <Button
+                type="button"
+                onClick={handleClose}
+                variant="outline"
+                size="sm"
+                className="border-border text-foreground hover:bg-accent"
+                disabled={isSubmitting}
+              >
+                {t("common:actions.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={!title.trim() || isSubmitting}
+                size="sm"
+                className="gap-2 disabled:opacity-50"
+              >
+                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("common:modals.createTask.createButton")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ClientMessageIntakeModal
+        open={intakeModalOpen}
+        onClose={() => setIntakeModalOpen(false)}
+        projectId={resolvedProjectId}
+        onApply={handleApplyIntakeDraft}
+      />
+    </>
   );
 }
 

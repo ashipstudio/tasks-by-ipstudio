@@ -21,6 +21,26 @@ export const projectSchema = v.object({
   archivedAt: v.nullable(v.date()),
 });
 
+export const aiTaskIntakeResultSchema = v.object({
+  title: v.string(),
+  businessName: v.nullable(v.string()),
+  summary: v.string(),
+  requestedChanges: v.array(v.string()),
+  workerNotes: v.array(v.string()),
+  originalClientMessage: v.string(),
+  priority: v.picklist([
+    "no-priority",
+    "low",
+    "medium",
+    "high",
+    "urgent",
+  ] as const),
+  dueDate: v.nullable(v.string()),
+  labels: v.array(v.string()),
+  missingInfo: v.array(v.string()),
+  confidence: v.number(),
+});
+
 export const taskSchema = v.object({
   id: v.string(),
   projectId: v.string(),
@@ -213,4 +233,5 @@ export const configSchema = v.object({
   hasGoogleSignIn: v.nullable(v.boolean()),
   hasDiscordSignIn: v.nullable(v.boolean()),
   hasCustomOAuth: v.nullable(v.boolean()),
+  hasAiTaskIntake: v.boolean(),
 });

@@ -3,6 +3,47 @@ import { isRegistrationUrlProtected } from "./check-registration-allowed";
 
 config();
 
+const DEFAULT_AI_PROVIDER = "gemini";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_AI_TASK_INTAKE_MAX_INPUT_CHARS = 20_000;
+const DEFAULT_AI_TASK_INTAKE_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+export function getAiTaskIntakeSettings() {
+  const maxInputChars = Number.parseInt(
+    process.env.AI_TASK_INTAKE_MAX_INPUT_CHARS ||
+      String(DEFAULT_AI_TASK_INTAKE_MAX_INPUT_CHARS),
+    10,
+  );
+  const maxImageBytes = Number.parseInt(
+    process.env.AI_TASK_INTAKE_MAX_IMAGE_BYTES ||
+      String(DEFAULT_AI_TASK_INTAKE_MAX_IMAGE_BYTES),
+    10,
+  );
+
+  return {
+    enabled: process.env.AI_TASK_INTAKE_ENABLED === "true",
+    provider: process.env.AI_PROVIDER || DEFAULT_AI_PROVIDER,
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
+    geminiModel: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+    maxInputChars: Number.isFinite(maxInputChars)
+      ? maxInputChars
+      : DEFAULT_AI_TASK_INTAKE_MAX_INPUT_CHARS,
+    maxImageBytes: Number.isFinite(maxImageBytes)
+      ? maxImageBytes
+      : DEFAULT_AI_TASK_INTAKE_MAX_IMAGE_BYTES,
+  };
+}
+
+export function isAiTaskIntakeAvailable(): boolean {
+  const aiTaskIntake = getAiTaskIntakeSettings();
+
+  return (
+    aiTaskIntake.enabled &&
+    aiTaskIntake.provider === "gemini" &&
+    Boolean(aiTaskIntake.geminiApiKey)
+  );
+}
+
 function getSettings() {
   return {
     disableRegistration: process.env.DISABLE_REGISTRATION === "true",
@@ -28,6 +69,7 @@ function getSettings() {
     hasCustomOAuth:
       Boolean(process.env.CUSTOM_OAUTH_CLIENT_ID) &&
       Boolean(process.env.CUSTOM_OAUTH_CLIENT_SECRET),
+    hasAiTaskIntake: isAiTaskIntakeAvailable(),
   };
 }
 

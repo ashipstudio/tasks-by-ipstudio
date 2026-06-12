@@ -90,6 +90,58 @@ input:-webkit-autofill:active {
       background-position: -200% 0;
     }
   }
+  @keyframes kaneo-ai-rotate {
+    to {
+      --kaneo-ai-angle: 360deg;
+    }
+  }
+}
+
+@property --kaneo-ai-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.kaneo-ai-btn {
+  --kaneo-ai-angle: 0deg;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    conic-gradient(
+      from var(--kaneo-ai-angle),
+      rgba(103, 232, 249, 0.55),
+      rgba(167, 139, 250, 0.6),
+      rgba(240, 171, 252, 0.55),
+      rgba(253, 211, 77, 0.45),
+      rgba(103, 232, 249, 0.55)
+    )
+    border-box;
+  animation: kaneo-ai-rotate 6s linear infinite;
+}
+
+.kaneo-ai-card {
+  --kaneo-ai-angle: 0deg;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    conic-gradient(
+      from var(--kaneo-ai-angle),
+      rgba(103, 232, 249, 0.3),
+      rgba(167, 139, 250, 0.35),
+      rgba(240, 171, 252, 0.3),
+      rgba(253, 211, 77, 0.22),
+      rgba(103, 232, 249, 0.3)
+    )
+    border-box;
+  animation:
+    kaneo-ai-rotate 8s linear infinite,
+    kaneo-ai-glow-pulse 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kaneo-ai-btn,
+  .kaneo-ai-card {
+    animation: none;
+  }
 }
 
 :root {

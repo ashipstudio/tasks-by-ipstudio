@@ -59,6 +59,21 @@ For sending emails (workspace invitations, magic links, etc.), configure these v
 
 > **Note:** If you're using an SMTP server with a self-signed or invalid TLS certificate, set `SMTP_IGNORE_TLS=true` to bypass certificate validation.
 
+#### AI Task Intake (Gemini)
+
+Optional AI-assisted task drafting from pasted client messages. Disabled by default. The API key is server-side only and is never exposed to the frontend.
+
+- `AI_TASK_INTAKE_ENABLED` - Enable AI task intake (default: `false`; set to `true` to enable)
+- `AI_PROVIDER` - AI provider to use (default: `gemini`)
+- `GEMINI_API_KEY` - Google Gemini API key (required when enabled)
+- `GEMINI_MODEL` - Gemini model name (default: `gemini-2.5-flash`)
+- `AI_TASK_INTAKE_MAX_INPUT_CHARS` - Maximum pasted message length in characters (default: `20000`)
+- `AI_TASK_INTAKE_MAX_IMAGE_BYTES` - Maximum screenshot upload size in bytes (default: `5242880`, 5 MB)
+
+The public `/api/config` endpoint exposes `hasAiTaskIntake: true` only when `AI_TASK_INTAKE_ENABLED=true`, `AI_PROVIDER=gemini`, and `GEMINI_API_KEY` is set.
+
+AI task intake accepts pasted text, an uploaded screenshot (PNG/JPEG/WebP), or both. Images are sent to Gemini for analysis and are not stored.
+
 For a complete list of all environment variables, their descriptions, and configuration options, see the [official documentation](https://kaneo.app/docs/core/installation/environment-variables).
 
 ## Common Issues & Troubleshooting

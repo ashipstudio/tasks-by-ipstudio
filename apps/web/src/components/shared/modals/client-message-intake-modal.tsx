@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import {
   type ChangeEvent,
-  type ClipboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -65,18 +64,6 @@ type UploadedImage = {
   fileName: string;
   fileSize: number;
 };
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function getClipboardImageFiles(
   clipboardData: DataTransfer | null,
@@ -347,10 +334,7 @@ function ClientMessageIntakeModal({
   );
 
   const handleClipboardImagePaste = useCallback(
-    async (
-      clipboardData: DataTransfer | null,
-      preventDefault: () => void,
-    ) => {
+    async (clipboardData: DataTransfer | null, preventDefault: () => void) => {
       if (isPending || draft) {
         return;
       }
@@ -383,9 +367,8 @@ function ClientMessageIntakeModal({
         return;
       }
 
-      void handleClipboardImagePaste(
-        event.clipboardData,
-        () => event.preventDefault(),
+      void handleClipboardImagePaste(event.clipboardData, () =>
+        event.preventDefault(),
       );
     };
 
@@ -479,7 +462,7 @@ function ClientMessageIntakeModal({
         >
           <div
             className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-2"
-            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <button
               type="button"
@@ -553,8 +536,8 @@ function ClientMessageIntakeModal({
                       <p className="text-xs text-muted-foreground">
                         Optional when using a screenshot. Include the full
                         message to preserve quotes, links, and context. You can
-                        also paste a screenshot with Ctrl+V or Cmd+V anywhere
-                        in this dialog.
+                        also paste a screenshot with Ctrl+V or Cmd+V anywhere in
+                        this dialog.
                       </p>
                     </div>
 
@@ -640,9 +623,9 @@ function ClientMessageIntakeModal({
                         )}
 
                         <p className="text-xs text-muted-foreground">
-                          PNG, JPEG, or WebP up to 5 MB each. Up to{" "}
-                          {MAX_IMAGES} screenshots. Screenshots are analyzed by
-                          Gemini and are not stored.
+                          PNG, JPEG, or WebP up to 5 MB each. Up to {MAX_IMAGES}{" "}
+                          screenshots. Screenshots are analyzed by Gemini and
+                          are not stored.
                         </p>
                       </div>
                     </div>

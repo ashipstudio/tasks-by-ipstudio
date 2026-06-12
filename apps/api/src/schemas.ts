@@ -56,6 +56,21 @@ export const aiTaskIntakeResultSchema = v.object({
   confidence: v.number(),
 });
 
+export const aiTaskUpdateProposalSchema = v.object({
+  latestUpdateSummary: v.string(),
+  newRequestedChanges: v.array(v.string()),
+  changedRequirements: v.array(v.string()),
+  supersededRequests: v.array(v.string()),
+  suggestedComment: v.string(),
+  suggestedDescriptionAppend: v.string(),
+  suggestedPriority: v.nullable(
+    v.picklist(["no-priority", "low", "medium", "high", "urgent"] as const),
+  ),
+  suggestedDueDate: v.nullable(v.string()),
+  missingInfo: v.array(v.string()),
+  confidence: v.number(),
+});
+
 export const taskSchema = v.object({
   id: v.string(),
   projectId: v.string(),

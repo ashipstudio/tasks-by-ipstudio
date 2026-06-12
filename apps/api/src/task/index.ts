@@ -12,7 +12,11 @@ import {
   workspaceTable,
 } from "../database/schema";
 import { publishEvent } from "../events";
-import { aiTaskIntakeResultSchema, taskSchema } from "../schemas";
+import {
+  aiTaskIntakeResultSchema,
+  aiTaskUpdateProposalSchema,
+  taskSchema,
+} from "../schemas";
 import {
   assertTaskImageKeyMatchesContext,
   createTaskImageUploadUrl,
@@ -36,6 +40,7 @@ import updateTaskPriority from "./controllers/update-task-priority";
 import updateTaskStatus from "./controllers/update-task-status";
 import updateTaskTitle from "./controllers/update-task-title";
 import generateTaskIntakeDraft from "./services/generate-task-intake-draft";
+import generateTaskUpdateDraft from "./services/generate-task-update-draft";
 import { AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES } from "./types/ai-task-intake";
 import { VALID_PRIORITIES } from "./validate-task-fields";
 
@@ -246,6 +251,56 @@ const task = new Hono<{
       });
 
       return c.json(draft);
+    },
+  )
+  .post(
+    "/update-draft/:taskId",
+    describeRoute({
+      operationId: "generateTaskUpdateDraft",
+      tags: ["Tasks"],
+      description:
+        "Analyse a new client update against an existing task and return a structured proposal for changes",
+      responses: {
+        200: {
+          description: "AI-generated task update proposal",
+          content: {
+            "application/json": {
+              schema: resolver(aiTaskUpdateProposalSchema),
+            },
+          },
+        },
+      },
+    }),
+    validator("param", v.object({ taskId: v.string() })),
+    validator(
+      "json",
+      v.pipe(
+        v.object({
+          rawMessage: v.optional(v.string()),
+          images: v.optional(v.array(aiTaskIntakeImageSchema)),
+          image: v.optional(aiTaskIntakeImageSchema),
+        }),
+        v.check(
+          (value) =>
+            Boolean(value.rawMessage?.trim()) ||
+            (Array.isArray(value.images) && value.images.length > 0) ||
+            Boolean(value.image?.data?.trim()),
+          "Either a message or a screenshot is required",
+        ),
+      ),
+    ),
+    workspaceAccess.fromTaskId(),
+    async (c) => {
+      const { taskId } = c.req.valid("param");
+      const body = c.req.valid("json");
+
+      const proposal = await generateTaskUpdateDraft(taskId, {
+        rawMessage: body.rawMessage,
+        images: body.images,
+        image: body.image,
+      });
+
+      return c.json(proposal);
     },
   )
   .post(

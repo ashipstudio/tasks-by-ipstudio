@@ -33,6 +33,14 @@ export default function TaskDetailsSheet({
   const [currentTaskId, setCurrentTaskId] = useState<string | undefined>(
     taskId,
   );
+  const [commentPrefill, setCommentPrefill] = useState<{
+    content: string;
+    token: number;
+  } | null>(null);
+
+  const handleUseAsComment = useCallback((text: string) => {
+    setCommentPrefill({ content: text, token: Date.now() });
+  }, []);
 
   const { data: task } = useGetTask(currentTaskId ?? "");
   const { data: project } = useGetProject({ id: projectId, workspaceId });
@@ -113,6 +121,7 @@ export default function TaskDetailsSheet({
             workspaceId={workspaceId}
             className="w-full bg-sidebar border-b border-border flex flex-col gap-0 overflow-y-auto shrink-0"
             compact={true}
+            onUseAsComment={handleUseAsComment}
           />
 
           <div className="flex-1 overflow-y-auto">
@@ -122,6 +131,7 @@ export default function TaskDetailsSheet({
                 projectId={projectId}
                 workspaceId={workspaceId}
                 className="flex flex-col gap-3"
+                commentPrefill={commentPrefill}
               />
             </div>
           </div>

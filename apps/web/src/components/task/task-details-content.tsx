@@ -26,6 +26,7 @@ type TaskDetailsContentProps = {
   projectId: string;
   workspaceId: string;
   className?: string;
+  commentPrefill?: { content: string; token: number } | null;
 };
 
 export default function TaskDetailsContent({
@@ -33,6 +34,7 @@ export default function TaskDetailsContent({
   projectId,
   workspaceId,
   className,
+  commentPrefill,
 }: TaskDetailsContentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -135,6 +137,8 @@ export default function TaskDetailsContent({
           <CommentInput
             taskId={taskId}
             mentionableMembers={mentionableMembers}
+            prefillContent={commentPrefill?.content}
+            prefillToken={commentPrefill?.token}
           />
         )}
         {activities.length > 0 ? (

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import TaskLayout from "@/components/common/task-layout";
 import PageTitle from "@/components/page-title";
@@ -30,6 +30,14 @@ function RouteComponent() {
   });
   const { isLoading: isActivitiesLoading } = useGetActivitiesByTaskId(taskId);
   const [isShikiReady, setIsShikiReady] = useState(false);
+  const [commentPrefill, setCommentPrefill] = useState<{
+    content: string;
+    token: number;
+  } | null>(null);
+
+  const handleUseAsComment = useCallback((text: string) => {
+    setCommentPrefill({ content: text, token: Date.now() });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -61,6 +69,7 @@ function RouteComponent() {
             projectId={projectId}
             workspaceId={workspaceId}
             className="h-full w-full lg:w-72 xl:w-80 flex flex-col gap-2"
+            onUseAsComment={handleUseAsComment}
           />
         )
       }
@@ -81,6 +90,7 @@ function RouteComponent() {
           projectId={projectId}
           workspaceId={workspaceId}
           className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-2 px-3 pb-16 pt-3 sm:px-4 xl:pb-20 xl:pt-8"
+          commentPrefill={commentPrefill}
         />
       )}
     </TaskLayout>

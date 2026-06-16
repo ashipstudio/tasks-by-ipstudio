@@ -5,8 +5,11 @@ import {
   CalendarX,
   Copy,
   Plus,
+  Sparkles,
 } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import TaskUpdateDraftModal from "@/components/shared/modals/task-update-draft-modal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import labelColors from "@/constants/label-colors";
+import useGetConfig from "@/hooks/queries/config/use-get-config";
 import useGetLabelsByTask from "@/hooks/queries/label/use-get-labels-by-task";
 import useGetTask from "@/hooks/queries/task/use-get-task";
 import { useGetActiveWorkspaceUsers } from "@/hooks/queries/workspace-users/use-get-active-workspace-users";
@@ -41,6 +45,7 @@ type TaskPropertiesSidebarProps = {
   workspaceId: string;
   className?: string;
   compact?: boolean;
+  onUseAsComment?: (text: string) => void;
 };
 
 export default function TaskPropertiesSidebar({
@@ -49,8 +54,11 @@ export default function TaskPropertiesSidebar({
   workspaceId,
   className,
   compact = false,
+  onUseAsComment,
 }: TaskPropertiesSidebarProps) {
   const { t } = useTranslation();
+  const { data: config } = useGetConfig();
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const { data: task } = useGetTask(taskId ?? "");
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
   const { data: taskLabels = [] } = useGetLabelsByTask(taskId ?? "");
@@ -578,6 +586,27 @@ export default function TaskPropertiesSidebar({
           </div>
         </div>
       </div>
+
+      {config?.hasAiTaskIntake && taskId && onUseAsComment && (
+        <div className="px-3 py-3 border-t border-border">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-1.5 text-foreground"
+            onClick={() => setUpdateModalOpen(true)}
+          >
+            <Sparkles className="size-3.5 text-violet-400 dark:text-violet-300" />
+            Update with AI
+          </Button>
+          <TaskUpdateDraftModal
+            open={updateModalOpen}
+            onClose={() => setUpdateModalOpen(false)}
+            taskId={taskId}
+            onUseAsComment={onUseAsComment}
+          />
+        </div>
+      )}
     </div>
   );
 }

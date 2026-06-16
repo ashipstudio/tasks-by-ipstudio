@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Paperclip } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import CommentEditor, {
   type MentionableMember,
@@ -21,17 +21,29 @@ import { toast } from "@/lib/toast";
 type CommentInputProps = {
   taskId: string;
   mentionableMembers?: MentionableMember[];
+  prefillContent?: string | null;
+  prefillToken?: number;
 };
 
 export default function CommentInput({
   taskId,
   mentionableMembers,
+  prefillContent,
+  prefillToken,
 }: CommentInputProps) {
   const { t } = useTranslation();
   const [content, setContent] = useState("");
   const [attachAction, setAttachAction] = useState<(() => void) | null>(null);
   const { mutateAsync: createComment, isPending } = useCreateComment();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!prefillContent?.trim() || !prefillToken) {
+      return;
+    }
+
+    setContent(prefillContent);
+  }, [prefillContent, prefillToken]);
 
   const handleSubmit = useCallback(async () => {
     if (!content.trim()) {

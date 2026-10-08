@@ -1,4 +1,5 @@
 import {
+  Bot,
   Calendar,
   CalendarClock,
   CalendarDays,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import TaskAgentPromptModal from "@/components/shared/modals/task-agent-prompt-modal";
 import TaskUpdateDraftModal from "@/components/shared/modals/task-update-draft-modal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +61,7 @@ export default function TaskPropertiesSidebar({
   const { t } = useTranslation();
   const { data: config } = useGetConfig();
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [agentPromptModalOpen, setAgentPromptModalOpen] = useState(false);
   const { data: task } = useGetTask(taskId ?? "");
   const { data: workspaceUsers } = useGetActiveWorkspaceUsers(workspaceId);
   const { data: taskLabels = [] } = useGetLabelsByTask(taskId ?? "");
@@ -587,23 +590,42 @@ export default function TaskPropertiesSidebar({
         </div>
       </div>
 
-      {config?.hasAiTaskIntake && taskId && onUseAsComment && (
-        <div className="px-3 py-3 border-t border-border">
+      {config?.hasAiTaskIntake && taskId && (
+        <div className="px-3 py-3 border-t border-border flex flex-col gap-2">
+          {onUseAsComment && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-foreground"
+                onClick={() => setUpdateModalOpen(true)}
+              >
+                <Sparkles className="size-3.5 text-violet-400 dark:text-violet-300" />
+                Update with AI
+              </Button>
+              <TaskUpdateDraftModal
+                open={updateModalOpen}
+                onClose={() => setUpdateModalOpen(false)}
+                taskId={taskId}
+                onUseAsComment={onUseAsComment}
+              />
+            </>
+          )}
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="w-full gap-1.5 text-foreground"
-            onClick={() => setUpdateModalOpen(true)}
+            onClick={() => setAgentPromptModalOpen(true)}
           >
-            <Sparkles className="size-3.5 text-violet-400 dark:text-violet-300" />
-            Update with AI
+            <Bot className="size-3.5 text-violet-400 dark:text-violet-300" />
+            Get Task for Agent
           </Button>
-          <TaskUpdateDraftModal
-            open={updateModalOpen}
-            onClose={() => setUpdateModalOpen(false)}
+          <TaskAgentPromptModal
+            open={agentPromptModalOpen}
+            onClose={() => setAgentPromptModalOpen(false)}
             taskId={taskId}
-            onUseAsComment={onUseAsComment}
           />
         </div>
       )}

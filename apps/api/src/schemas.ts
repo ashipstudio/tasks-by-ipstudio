@@ -71,6 +71,12 @@ export const aiTaskUpdateProposalSchema = v.object({
   confidence: v.number(),
 });
 
+export const taskAgentPromptSchema = v.object({
+  markdown: v.string(),
+  imageCount: v.number(),
+  skippedImageCount: v.number(),
+});
+
 export const taskSchema = v.object({
   id: v.string(),
   projectId: v.string(),

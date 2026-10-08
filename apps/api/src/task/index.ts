@@ -15,6 +15,7 @@ import { publishEvent } from "../events";
 import {
   aiTaskIntakeResultSchema,
   aiTaskUpdateProposalSchema,
+  taskAgentPromptSchema,
   taskSchema,
 } from "../schemas";
 import {
@@ -39,6 +40,7 @@ import updateTaskDueDate from "./controllers/update-task-due-date";
 import updateTaskPriority from "./controllers/update-task-priority";
 import updateTaskStatus from "./controllers/update-task-status";
 import updateTaskTitle from "./controllers/update-task-title";
+import generateTaskAgentPrompt from "./services/generate-task-agent-prompt";
 import generateTaskIntakeDraft from "./services/generate-task-intake-draft";
 import generateTaskUpdateDraft from "./services/generate-task-update-draft";
 import { AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES } from "./types/ai-task-intake";
@@ -301,6 +303,32 @@ const task = new Hono<{
       });
 
       return c.json(proposal);
+    },
+  )
+  .post(
+    "/agent-prompt/:taskId",
+    describeRoute({
+      operationId: "generateTaskAgentPrompt",
+      tags: ["Tasks"],
+      description:
+        "Read the task description, comments, updates and images and return a markdown brief to paste into an AI coding agent",
+      responses: {
+        200: {
+          description: "Markdown brief for an AI coding agent",
+          content: {
+            "application/json": {
+              schema: resolver(taskAgentPromptSchema),
+            },
+          },
+        },
+      },
+    }),
+    validator("param", v.object({ taskId: v.string() })),
+    workspaceAccess.fromTaskId(),
+    async (c) => {
+      const { taskId } = c.req.valid("param");
+      const prompt = await generateTaskAgentPrompt(taskId);
+      return c.json(prompt);
     },
   )
   .post(

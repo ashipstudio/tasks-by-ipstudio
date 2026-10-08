@@ -495,6 +495,9 @@ function TaskUpdateDraftModal({
     useState<GenerateTaskUpdateDraftResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
+  // Bumped on every open and every generate, so a response that arrives after
+  // the modal was closed/reopened (or re-run) is ignored.
+  const requestIdRef = useRef(0);
 
   const {
     mutateAsync: generateProposal,
@@ -506,6 +509,7 @@ function TaskUpdateDraftModal({
   useEffect(() => {
     if (!open) return;
 
+    requestIdRef.current += 1;
     setRawMessage("");
     setImageError(null);
     setPreviewOpen(false);
@@ -608,6 +612,7 @@ function TaskUpdateDraftModal({
     if (!canGenerate) return;
 
     reset();
+    const requestId = ++requestIdRef.current;
 
     try {
       const result = await generateProposal({
@@ -622,6 +627,7 @@ function TaskUpdateDraftModal({
             }
           : {}),
       });
+      if (requestId !== requestIdRef.current) return;
       setProposal(result);
     } catch {
       // Error handled by mutation hook.
@@ -629,6 +635,7 @@ function TaskUpdateDraftModal({
   };
 
   const handleBack = () => {
+    requestIdRef.current += 1;
     setProposal(null);
     reset();
   };

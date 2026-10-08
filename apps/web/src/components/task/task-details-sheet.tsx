@@ -34,18 +34,29 @@ export default function TaskDetailsSheet({
     taskId,
   );
   const [commentPrefill, setCommentPrefill] = useState<{
+    taskId: string;
     content: string;
     token: number;
   } | null>(null);
 
-  const handleUseAsComment = useCallback((text: string) => {
-    setCommentPrefill({ content: text, token: Date.now() });
-  }, []);
+  const handleUseAsComment = useCallback(
+    (text: string) => {
+      if (!currentTaskId) return;
+      setCommentPrefill({
+        taskId: currentTaskId,
+        content: text,
+        token: Date.now(),
+      });
+    },
+    [currentTaskId],
+  );
 
   const { data: task } = useGetTask(currentTaskId ?? "");
   const { data: project } = useGetProject({ id: projectId, workspaceId });
 
   useEffect(() => {
+    // A suggested comment belongs to the task it was generated for.
+    setCommentPrefill(null);
     if (taskId) {
       // Update taskId immediately without closing/reopening
       setCurrentTaskId(taskId);
@@ -131,7 +142,11 @@ export default function TaskDetailsSheet({
                 projectId={projectId}
                 workspaceId={workspaceId}
                 className="flex flex-col gap-3"
-                commentPrefill={commentPrefill}
+                commentPrefill={
+                  commentPrefill?.taskId === currentTaskId
+                    ? commentPrefill
+                    : null
+                }
               />
             </div>
           </div>

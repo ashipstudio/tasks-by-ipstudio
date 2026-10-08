@@ -225,6 +225,7 @@ function buildPrompt(
 
   return [
     "You are helping a project management team turn a client email or message into a structured internal task draft.",
+    `Today's date is ${toIsoDateString(new Date())}.`,
     "Rules:",
     "- Use only facts present in the client message or screenshot.",
     "- Do not invent business names, URLs, due dates, priorities, or requirements.",
@@ -399,7 +400,10 @@ function resolveDueDate(
   }
 
   if (shouldUseDefault) {
-    const defaultDate = addBusinessDays(new Date(), DEFAULT_DUE_DATE_BUSINESS_DAYS);
+    const defaultDate = addBusinessDays(
+      new Date(),
+      DEFAULT_DUE_DATE_BUSINESS_DAYS,
+    );
     return {
       dueDate: toIsoDateString(defaultDate),
       dueDateReason:
@@ -447,8 +451,11 @@ function sanitizeModelOutput(
     output.shouldUseDefaultDueDate,
   );
 
-  const dueDateReason =
-    output.dueDateReason?.trim() || defaultDueDateReason || null;
+  // Only keep the model's reason when its date survived normalization.
+  const dueDateReason = explicitDueDate
+    ? output.dueDateReason?.trim() || null
+    : defaultDueDateReason;
+  const startDate = normalizeIsoDate(output.startDate);
 
   return {
     title,
@@ -471,10 +478,8 @@ function sanitizeModelOutput(
     priorityReason: output.priorityReason?.trim() || null,
     dueDate,
     dueDateReason,
-    startDate: normalizeIsoDate(output.startDate),
-    startDateReason: output.startDate
-      ? (output.startDateReason?.trim() || null)
-      : null,
+    startDate,
+    startDateReason: startDate ? output.startDateReason?.trim() || null : null,
     labels: normalizeStringArray(output.labels),
     missingInfo: normalizeStringArray(output.missingInfo),
     confidence: Math.min(1, Math.max(0, output.confidence)),

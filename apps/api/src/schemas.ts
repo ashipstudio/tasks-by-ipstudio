@@ -24,6 +24,17 @@ export const projectSchema = v.object({
 export const aiTaskIntakeResultSchema = v.object({
   title: v.string(),
   businessName: v.nullable(v.string()),
+  emailSubject: v.nullable(v.string()),
+  generatedTaskTitle: v.nullable(v.string()),
+  sourceType: v.picklist([
+    "pasted_email",
+    "screenshot",
+    "pasted_message",
+    "mixed",
+  ] as const),
+  sourceUrls: v.array(v.string()),
+  senderName: v.nullable(v.string()),
+  senderEmail: v.nullable(v.string()),
   summary: v.string(),
   requestedChanges: v.array(v.string()),
   workerNotes: v.array(v.string()),
@@ -35,10 +46,47 @@ export const aiTaskIntakeResultSchema = v.object({
     "high",
     "urgent",
   ] as const),
+  priorityReason: v.nullable(v.string()),
   dueDate: v.nullable(v.string()),
+  dueDateReason: v.nullable(v.string()),
+  startDate: v.nullable(v.string()),
+  startDateReason: v.nullable(v.string()),
   labels: v.array(v.string()),
   missingInfo: v.array(v.string()),
   confidence: v.number(),
+});
+
+export const aiTaskUpdateProposalSchema = v.object({
+  latestUpdateSummary: v.string(),
+  newRequestedChanges: v.array(v.string()),
+  changedRequirements: v.array(v.string()),
+  supersededRequests: v.array(v.string()),
+  suggestedComment: v.string(),
+  suggestedDescriptionAppend: v.string(),
+  suggestedPriority: v.nullable(
+    v.picklist(["no-priority", "low", "medium", "high", "urgent"] as const),
+  ),
+  suggestedDueDate: v.nullable(v.string()),
+  missingInfo: v.array(v.string()),
+  confidence: v.number(),
+});
+
+export const taskAgentPromptSchema = v.object({
+  markdown: v.string(),
+  context: v.object({
+    prompt: v.string(),
+    files: v.array(
+      v.object({
+        assetId: v.string(),
+        kind: v.picklist(["image", "pdf", "docx", "other"] as const),
+        label: v.string(),
+        filename: v.string(),
+        mimeType: v.string(),
+        attached: v.boolean(),
+        skipReason: v.nullable(v.string()),
+      }),
+    ),
+  }),
 });
 
 export const taskSchema = v.object({
@@ -234,4 +282,5 @@ export const configSchema = v.object({
   hasDiscordSignIn: v.nullable(v.boolean()),
   hasCustomOAuth: v.nullable(v.boolean()),
   hasAiTaskIntake: v.boolean(),
+  aiMaxImageBytes: v.number(),
 });

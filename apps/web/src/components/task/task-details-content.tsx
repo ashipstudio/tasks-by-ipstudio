@@ -16,6 +16,7 @@ import useGetTask from "@/hooks/queries/task/use-get-task";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
 import useGetWorkspaceUsers from "@/hooks/queries/workspace-users/use-get-workspace-users";
 import type { ExternalLink } from "@/types/external-link";
+import TaskAttachments from "./task-attachments";
 import TaskDescription from "./task-description";
 import TaskRelations from "./task-relations";
 import TaskSubtasks from "./task-subtasks";
@@ -26,6 +27,7 @@ type TaskDetailsContentProps = {
   projectId: string;
   workspaceId: string;
   className?: string;
+  commentPrefill?: { content: string; token: number } | null;
 };
 
 export default function TaskDetailsContent({
@@ -33,6 +35,7 @@ export default function TaskDetailsContent({
   projectId,
   workspaceId,
   className,
+  commentPrefill,
 }: TaskDetailsContentProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -105,6 +108,7 @@ export default function TaskDetailsContent({
         </p>
         <TaskTitle taskId={taskId} />
         <TaskDescription taskId={taskId} />
+        <TaskAttachments taskId={taskId} comments={activities} />
       </div>
       {!isLoadingExternalLinks && externalLinks.length > 0 && (
         <div className="mt-4">
@@ -135,6 +139,8 @@ export default function TaskDetailsContent({
           <CommentInput
             taskId={taskId}
             mentionableMembers={mentionableMembers}
+            prefillContent={commentPrefill?.content}
+            prefillToken={commentPrefill?.token}
           />
         )}
         {activities.length > 0 ? (

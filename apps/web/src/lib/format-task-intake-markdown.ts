@@ -48,10 +48,83 @@ function section(heading: string, body: string | null): string | null {
   return `## ${heading}\n\n${body.trim()}`;
 }
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  pasted_email: "Pasted email",
+  screenshot: "Screenshot",
+  pasted_message: "Pasted message",
+  mixed: "Mixed (text + screenshot)",
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  "no-priority": "No priority",
+};
+
+function buildTaskContextSection(
+  draft: GenerateTaskIntakeDraftResponse,
+): string | null {
+  const lines: string[] = [];
+
+  if (draft.businessName) {
+    lines.push(`- **Business:** ${draft.businessName}`);
+  }
+
+  if (draft.emailSubject) {
+    lines.push(`- **Subject:** ${draft.emailSubject}`);
+  }
+
+  if (draft.sourceUrls && draft.sourceUrls.length === 1) {
+    lines.push(`- **URL:** ${draft.sourceUrls[0]}`);
+  } else if (draft.sourceUrls && draft.sourceUrls.length > 1) {
+    const urlLines = draft.sourceUrls.map((url) => `  - ${url}`).join("\n");
+    lines.push(`- **URLs:**\n${urlLines}`);
+  }
+
+  const sourceLabel =
+    SOURCE_TYPE_LABELS[draft.sourceType] ?? draft.sourceType ?? null;
+  if (sourceLabel) {
+    lines.push(`- **Source:** ${sourceLabel}`);
+  }
+
+  if (draft.senderName) {
+    lines.push(`- **Sender:** ${draft.senderName}`);
+  }
+
+  if (draft.senderEmail) {
+    lines.push(`- **Sender email:** ${draft.senderEmail}`);
+  }
+
+  if (draft.dueDate) {
+    lines.push(`- **Due Date:** ${draft.dueDate}`);
+  }
+
+  if (draft.dueDateReason) {
+    lines.push(`- **Due Date Reason:** ${draft.dueDateReason}`);
+  }
+
+  if (draft.priority && draft.priority !== "no-priority") {
+    const priorityLabel = PRIORITY_LABELS[draft.priority] ?? draft.priority;
+    lines.push(`- **Priority:** ${priorityLabel}`);
+  }
+
+  if (draft.priorityReason) {
+    lines.push(`- **Priority Reason:** ${draft.priorityReason}`);
+  }
+
+  if (lines.length === 0) return null;
+  return lines.join("\n");
+}
+
 export function formatTaskIntakeDescription(
   draft: GenerateTaskIntakeDraftResponse,
 ): string {
   const parts: string[] = [];
+
+  const taskContext = section("Task Context", buildTaskContextSection(draft));
+  if (taskContext) parts.push(taskContext);
 
   const summary = section("Summary", draft.summary.trim() || null);
   if (summary) parts.push(summary);

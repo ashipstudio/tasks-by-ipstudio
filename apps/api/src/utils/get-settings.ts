@@ -70,6 +70,7 @@ function getSettings() {
       Boolean(process.env.CUSTOM_OAUTH_CLIENT_ID) &&
       Boolean(process.env.CUSTOM_OAUTH_CLIENT_SECRET),
     hasAiTaskIntake: isAiTaskIntakeAvailable(),
+    aiMaxImageBytes: getAiTaskIntakeSettings().maxImageBytes,
   };
 }
 

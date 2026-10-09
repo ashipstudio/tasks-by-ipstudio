@@ -12,7 +12,12 @@ import {
   workspaceTable,
 } from "../database/schema";
 import { publishEvent } from "../events";
-import { aiTaskIntakeResultSchema, taskSchema } from "../schemas";
+import {
+  aiTaskIntakeResultSchema,
+  aiTaskUpdateProposalSchema,
+  taskAgentPromptSchema,
+  taskSchema,
+} from "../schemas";
 import {
   assertTaskImageKeyMatchesContext,
   createTaskImageUploadUrl,
@@ -35,7 +40,9 @@ import updateTaskDueDate from "./controllers/update-task-due-date";
 import updateTaskPriority from "./controllers/update-task-priority";
 import updateTaskStatus from "./controllers/update-task-status";
 import updateTaskTitle from "./controllers/update-task-title";
+import generateTaskAgentPrompt from "./services/generate-task-agent-prompt";
 import generateTaskIntakeDraft from "./services/generate-task-intake-draft";
+import generateTaskUpdateDraft from "./services/generate-task-update-draft";
 import { AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES } from "./types/ai-task-intake";
 import { VALID_PRIORITIES } from "./validate-task-fields";
 
@@ -47,12 +54,15 @@ const aiTaskIntakeImageSchema = v.object({
 const aiTaskIntakeDraftBodySchema = v.pipe(
   v.object({
     rawMessage: v.optional(v.string()),
+    images: v.optional(v.array(aiTaskIntakeImageSchema)),
     image: v.optional(aiTaskIntakeImageSchema),
   }),
   v.check(
     (value) =>
-      Boolean(value.rawMessage?.trim()) || Boolean(value.image?.data?.trim()),
-    "Either rawMessage or image must be provided",
+      Boolean(value.rawMessage?.trim()) ||
+      (Array.isArray(value.images) && value.images.length > 0) ||
+      Boolean(value.image?.data?.trim()),
+    "Either rawMessage or at least one image is required",
   ),
 );
 
@@ -234,10 +244,96 @@ const task = new Hono<{
 
       const draft = await generateTaskIntakeDraft({
         rawMessage: body.rawMessage,
-        image: body.image,
+        images:
+          body.images && body.images.length > 0
+            ? body.images
+            : body.image
+              ? [body.image]
+              : undefined,
       });
 
       return c.json(draft);
+    },
+  )
+  .post(
+    "/update-draft/:taskId",
+    describeRoute({
+      operationId: "generateTaskUpdateDraft",
+      tags: ["Tasks"],
+      description:
+        "Analyse a new client update against an existing task and return a structured proposal for changes",
+      responses: {
+        200: {
+          description: "AI-generated task update proposal",
+          content: {
+            "application/json": {
+              schema: resolver(aiTaskUpdateProposalSchema),
+            },
+          },
+        },
+      },
+    }),
+    validator("param", v.object({ taskId: v.string() })),
+    validator(
+      "json",
+      v.pipe(
+        v.object({
+          rawMessage: v.optional(v.string()),
+          images: v.optional(
+            v.pipe(
+              v.array(aiTaskIntakeImageSchema),
+              v.maxLength(1, "Updates support one screenshot"),
+            ),
+          ),
+          image: v.optional(aiTaskIntakeImageSchema),
+        }),
+        v.check(
+          (value) =>
+            Boolean(value.rawMessage?.trim()) ||
+            (Array.isArray(value.images) && value.images.length > 0) ||
+            Boolean(value.image?.data?.trim()),
+          "Either a message or a screenshot is required",
+        ),
+      ),
+    ),
+    workspaceAccess.fromTaskId(),
+    async (c) => {
+      const { taskId } = c.req.valid("param");
+      const body = c.req.valid("json");
+
+      const proposal = await generateTaskUpdateDraft(taskId, {
+        rawMessage: body.rawMessage,
+        images: body.images,
+        image: body.image,
+      });
+
+      return c.json(proposal);
+    },
+  )
+  .post(
+    "/agent-prompt/:taskId",
+    describeRoute({
+      operationId: "generateTaskAgentPrompt",
+      tags: ["Tasks"],
+      description:
+        "Read the task description, comments, updates and images and return a markdown brief to paste into an AI coding agent",
+      responses: {
+        200: {
+          description: "Markdown brief for an AI coding agent",
+          content: {
+            "application/json": {
+              schema: resolver(taskAgentPromptSchema),
+            },
+          },
+        },
+      },
+    }),
+    validator("param", v.object({ taskId: v.string() })),
+    workspaceAccess.fromTaskId(),
+    async (c) => {
+      const { taskId } = c.req.valid("param");
+      const prompt = await generateTaskAgentPrompt(taskId);
+      return c.json(prompt);
     },
   )
   .post(

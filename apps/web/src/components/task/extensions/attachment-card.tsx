@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { getApiUrl } from "@/fetchers/get-api-url";
 import { toast } from "@/lib/toast";
 
-function formatBytes(size: number) {
+export function formatBytes(size: number) {
   if (!Number.isFinite(size) || size <= 0) return "";
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
@@ -15,7 +15,7 @@ function formatBytes(size: number) {
   return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function normalizeAttachmentUrl(url: string) {
+export function normalizeAttachmentUrl(url: string) {
   if (!url || typeof window === "undefined") {
     return url;
   }
@@ -42,6 +42,30 @@ function normalizeAttachmentUrl(url: string) {
   }
 }
 
+/** Downloads an attachment with the session cookie and saves it as `filename`. */
+export async function downloadAttachment(url: string, filename: string) {
+  const response = await fetch(url, { credentials: "include" });
+
+  if (!response.ok) {
+    throw new Error(`Download failed with status ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = filename || "attachment";
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 1000);
+}
+
 function AttachmentCardView({ node }: NodeViewProps) {
   const url = String(node.attrs.url || "");
   const filename = String(node.attrs.filename || "Attachment");
@@ -61,28 +85,7 @@ function AttachmentCardView({ node }: NodeViewProps) {
       setIsDownloading(true);
 
       try {
-        const response = await fetch(downloadUrl, {
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Download failed with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
-        const objectUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-
-        link.href = objectUrl;
-        link.download = filename || "attachment";
-        link.rel = "noopener";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        window.setTimeout(() => {
-          window.URL.revokeObjectURL(objectUrl);
-        }, 1000);
+        await downloadAttachment(downloadUrl, filename);
       } catch (error) {
         console.error("Failed to download attachment:", error);
         toast.error("Could not download this attachment");

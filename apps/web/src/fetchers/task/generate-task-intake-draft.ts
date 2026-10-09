@@ -16,13 +16,13 @@ export type GenerateTaskIntakeDraftResponse = InferResponseType<
 async function generateTaskIntakeDraft({
   projectId,
   rawMessage,
-  image,
+  images,
 }: GenerateTaskIntakeDraftRequest): Promise<GenerateTaskIntakeDraftResponse> {
   const response = await client.task["intake-draft"][":projectId"].$post({
     param: { projectId },
     json: {
       ...(rawMessage ? { rawMessage } : {}),
-      ...(image ? { image } : {}),
+      ...(images && images.length > 0 ? { images } : {}),
     },
   });
 

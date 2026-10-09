@@ -4,7 +4,8 @@ import {
   Check,
   ChevronDown,
   Copy,
-  ImageOff,
+  FileText,
+  FileX,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -36,14 +37,14 @@ type TaskAgentPromptModalProps = {
 
 type AgentPromptContext = GenerateTaskAgentPromptResponse["context"];
 
-/** Collapsible view of exactly what was sent to the AI: images and prompt. */
+/** Collapsible view of exactly what was sent to the AI: files and prompt. */
 function AgentPromptContextPanel({ context }: { context: AgentPromptContext }) {
   const [open, setOpen] = useState(false);
-  const readCount = context.images.filter((image) => image.attached).length;
+  const readCount = context.files.filter((file) => file.attached).length;
   const summary =
-    context.images.length === 0
-      ? "No images"
-      : `${readCount} of ${context.images.length} image${context.images.length === 1 ? "" : "s"} read`;
+    context.files.length === 0
+      ? "No attachments"
+      : `${readCount} of ${context.files.length} attachment${context.files.length === 1 ? "" : "s"} read`;
 
   return (
     <div className="rounded-lg border border-border">
@@ -67,42 +68,56 @@ function AgentPromptContextPanel({ context }: { context: AgentPromptContext }) {
       {open && (
         <div className="space-y-4 border-t border-border px-4 py-4">
           <div className="space-y-2">
-            <p className="text-xs font-medium text-foreground">Images</p>
-            {context.images.length === 0 ? (
+            <p className="text-xs font-medium text-foreground">
+              Images and documents
+            </p>
+            {context.files.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                No images in the description or comments.
+                No images or files in the description or comments.
               </p>
             ) : (
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {context.images.map((image) => (
-                  <li key={image.assetId} className="space-y-1.5">
+                {context.files.map((file) => (
+                  <li key={file.assetId} className="space-y-1.5">
                     <a
-                      href={getApiUrl(`/asset/${image.assetId}`)}
+                      href={getApiUrl(`/asset/${file.assetId}`)}
                       target="_blank"
                       rel="noreferrer"
                       className={cn(
-                        "block h-24 overflow-hidden rounded-md border border-border bg-muted/30",
-                        !image.attached && "opacity-50",
+                        "flex h-24 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30",
+                        !file.attached && "opacity-50",
                       )}
                     >
-                      <img
-                        src={getApiUrl(`/asset/${image.assetId}`)}
-                        alt={image.filename}
-                        loading="lazy"
-                        className="h-full w-full object-contain"
-                      />
+                      {file.kind === "image" ? (
+                        <img
+                          src={getApiUrl(`/asset/${file.assetId}`)}
+                          alt={file.filename}
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <span className="flex flex-col items-center gap-1 text-muted-foreground">
+                          <FileText className="size-7" />
+                          <span className="text-[10px] font-semibold uppercase">
+                            {file.kind === "other" ? "File" : file.kind}
+                          </span>
+                        </span>
+                      )}
                     </a>
                     <p className="truncate text-xs text-foreground">
-                      {image.label}
+                      {file.label}
                     </p>
-                    {image.attached ? (
+                    {file.attached ? (
                       <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Check className="size-3" /> Read by AI
+                        <Check className="size-3" />
+                        {file.kind === "docx"
+                          ? "Text read by AI"
+                          : "Read by AI"}
                       </p>
                     ) : (
                       <p className="flex items-start gap-1 text-xs text-muted-foreground">
-                        <ImageOff className="mt-0.5 size-3 shrink-0" />
-                        Not read: {image.skipReason}
+                        <FileX className="mt-0.5 size-3 shrink-0" />
+                        Not read: {file.skipReason}
                       </p>
                     )}
                   </li>
@@ -199,8 +214,9 @@ function TaskAgentPromptModal({
                 Task for Agent
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
-                A brief built from this task's description, comments, updates
-                and images. Review it, then paste it into your coding agent.
+                A brief built from this task's description, comments, updates,
+                images and documents. Review it, then paste it into your coding
+                agent.
               </DialogDescription>
             </div>
           </div>

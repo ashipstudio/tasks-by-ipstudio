@@ -75,9 +75,10 @@ export const taskAgentPromptSchema = v.object({
   markdown: v.string(),
   context: v.object({
     prompt: v.string(),
-    images: v.array(
+    files: v.array(
       v.object({
         assetId: v.string(),
+        kind: v.picklist(["image", "pdf", "docx", "other"] as const),
         label: v.string(),
         filename: v.string(),
         mimeType: v.string(),

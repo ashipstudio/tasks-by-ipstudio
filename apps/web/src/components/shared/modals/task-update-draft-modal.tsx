@@ -31,6 +31,7 @@ import useGenerateTaskUpdateDraft from "@/hooks/mutations/task/use-generate-task
 import { useUpdateTaskDescription } from "@/hooks/mutations/task/use-update-task-description";
 import { useUpdateTaskDueDate } from "@/hooks/mutations/task/use-update-task-due-date";
 import { useUpdateTaskPriority } from "@/hooks/mutations/task/use-update-task-status-priority";
+import useGetConfig from "@/hooks/queries/config/use-get-config";
 import useGetTask from "@/hooks/queries/task/use-get-task";
 import { cn } from "@/lib/cn";
 import { formatDateShort } from "@/lib/format";
@@ -39,7 +40,12 @@ import { toast } from "@/lib/toast";
 import type Task from "@/types/task";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// Fallback until the server's limit (config.aiMaxImageBytes) has loaded.
+const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function formatMegabytes(bytes: number): string {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
 
 type UploadedImage = {
   mimeType: (typeof ALLOWED_IMAGE_TYPES)[number];
@@ -151,8 +157,10 @@ function BulletList({ items }: { items: string[] }) {
 
   return (
     <ul className="list-disc pl-5 space-y-1 text-foreground">
-      {items.map((item) => (
-        <li key={item} className="whitespace-pre-wrap">
+      {items.map((item, index) => (
+        // AI output can repeat identical items, so the text alone isn't unique.
+        // biome-ignore lint/suspicious/noArrayIndexKey: static list, never reordered
+        <li key={`${index}-${item}`} className="whitespace-pre-wrap">
           {item}
         </li>
       ))}
@@ -296,7 +304,7 @@ function ProposalReview({
     try {
       await updateDueDate({
         ...task,
-        dueDate,
+        dueDate: dueDate.toISOString(),
       });
       setAppliedDueDate(true);
       toast.success("Due date updated.");
@@ -485,6 +493,8 @@ function TaskUpdateDraftModal({
   onUseAsComment,
 }: TaskUpdateDraftModalProps) {
   const { data: task } = useGetTask(taskId);
+  const { data: config } = useGetConfig();
+  const maxImageBytes = config?.aiMaxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
   const [rawMessage, setRawMessage] = useState("");
   const [uploadedImage, setUploadedImage] = useState<UploadedImage | null>(
     null,
@@ -523,39 +533,44 @@ function TaskUpdateDraftModal({
 
   const canGenerate = Boolean(rawMessage.trim() || uploadedImage);
 
-  const applyImageFile = useCallback(async (file: File) => {
-    if (
-      !ALLOWED_IMAGE_TYPES.includes(
-        file.type as (typeof ALLOWED_IMAGE_TYPES)[number],
-      )
-    ) {
-      setImageError("Upload or paste a PNG, JPEG, or WebP screenshot.");
-      return false;
-    }
+  const applyImageFile = useCallback(
+    async (file: File) => {
+      if (
+        !ALLOWED_IMAGE_TYPES.includes(
+          file.type as (typeof ALLOWED_IMAGE_TYPES)[number],
+        )
+      ) {
+        setImageError("Upload or paste a PNG, JPEG, or WebP screenshot.");
+        return false;
+      }
 
-    if (file.size > MAX_IMAGE_BYTES) {
-      setImageError("Screenshot must be 5 MB or smaller.");
-      return false;
-    }
+      if (file.size > maxImageBytes) {
+        setImageError(
+          `Screenshot must be ${formatMegabytes(maxImageBytes)} or smaller.`,
+        );
+        return false;
+      }
 
-    try {
-      const { mimeType, data } = await readImageAsBase64(file);
-      setUploadedImage((current) => {
-        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
-        return {
-          mimeType: mimeType as UploadedImage["mimeType"],
-          data,
-          previewUrl: URL.createObjectURL(file),
-          fileName: file.name || "Pasted screenshot",
-        };
-      });
-      setImageError(null);
-      return true;
-    } catch {
-      setImageError("Could not read the selected screenshot.");
-      return false;
-    }
-  }, []);
+      try {
+        const { mimeType, data } = await readImageAsBase64(file);
+        setUploadedImage((current) => {
+          if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+          return {
+            mimeType: mimeType as UploadedImage["mimeType"],
+            data,
+            previewUrl: URL.createObjectURL(file),
+            fileName: file.name || "Pasted screenshot",
+          };
+        });
+        setImageError(null);
+        return true;
+      } catch {
+        setImageError("Could not read the selected screenshot.");
+        return false;
+      }
+    },
+    [maxImageBytes],
+  );
 
   const handleClipboardImagePaste = useCallback(
     async (clipboardData: DataTransfer | null, preventDefault: () => void) => {
@@ -777,7 +792,8 @@ function TaskUpdateDraftModal({
                       )}
 
                       <p className="text-xs text-muted-foreground">
-                        One PNG, JPEG, or WebP up to 5 MB. Paste with Ctrl+V /
+                        One PNG, JPEG, or WebP up to{" "}
+                        {formatMegabytes(maxImageBytes)}. Paste with Ctrl+V /
                         Cmd+V. Not stored on the server.
                       </p>
                     </div>

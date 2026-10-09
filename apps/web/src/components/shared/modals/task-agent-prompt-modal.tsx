@@ -2,7 +2,9 @@ import {
   AlertCircle,
   Bot,
   Check,
+  ChevronDown,
   Copy,
+  ImageOff,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -20,8 +22,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
+import { getApiUrl } from "@/fetchers/get-api-url";
 import type { GenerateTaskAgentPromptResponse } from "@/fetchers/task/generate-task-agent-prompt";
 import useGenerateTaskAgentPrompt from "@/hooks/mutations/task/use-generate-task-agent-prompt";
+import { cn } from "@/lib/cn";
 import { toast } from "@/lib/toast";
 
 type TaskAgentPromptModalProps = {
@@ -29,6 +33,97 @@ type TaskAgentPromptModalProps = {
   onClose: () => void;
   taskId: string;
 };
+
+type AgentPromptContext = GenerateTaskAgentPromptResponse["context"];
+
+/** Collapsible view of exactly what was sent to the AI: images and prompt. */
+function AgentPromptContextPanel({ context }: { context: AgentPromptContext }) {
+  const [open, setOpen] = useState(false);
+  const readCount = context.images.filter((image) => image.attached).length;
+  const summary =
+    context.images.length === 0
+      ? "No images"
+      : `${readCount} of ${context.images.length} image${context.images.length === 1 ? "" : "s"} read`;
+
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm"
+      >
+        <span className="font-medium text-foreground">
+          View context sent to AI
+        </span>
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          {summary}
+          <ChevronDown
+            className={cn("size-4 transition-transform", open && "rotate-180")}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <div className="space-y-4 border-t border-border px-4 py-4">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">Images</p>
+            {context.images.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No images in the description or comments.
+              </p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {context.images.map((image) => (
+                  <li key={image.assetId} className="space-y-1.5">
+                    <a
+                      href={getApiUrl(`/asset/${image.assetId}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(
+                        "block h-24 overflow-hidden rounded-md border border-border bg-muted/30",
+                        !image.attached && "opacity-50",
+                      )}
+                    >
+                      <img
+                        src={getApiUrl(`/asset/${image.assetId}`)}
+                        alt={image.filename}
+                        loading="lazy"
+                        className="h-full w-full object-contain"
+                      />
+                    </a>
+                    <p className="truncate text-xs text-foreground">
+                      {image.label}
+                    </p>
+                    {image.attached ? (
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Check className="size-3" /> Read by AI
+                      </p>
+                    ) : (
+                      <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                        <ImageOff className="mt-0.5 size-3 shrink-0" />
+                        Not read: {image.skipReason}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">
+              Text prompt (task material and instructions)
+            </p>
+            <pre className="max-h-80 overflow-y-auto rounded-md border border-border bg-background p-3 font-mono text-xs whitespace-pre-wrap break-words text-muted-foreground">
+              {context.prompt}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TaskAgentPromptModal({
   open,
@@ -138,7 +233,7 @@ function TaskAgentPromptModal({
             </Alert>
           )}
 
-          {result && !isPending && (
+          {result && !isPending && !error && (
             <>
               <Tabs defaultValue="preview">
                 <TabsList>
@@ -156,13 +251,7 @@ function TaskAgentPromptModal({
                   </pre>
                 </TabsPanel>
               </Tabs>
-              <p className="text-xs text-muted-foreground">
-                {result.imageCount === 1
-                  ? "1 image was read."
-                  : `${result.imageCount} images were read.`}
-                {result.skippedImageCount > 0 &&
-                  ` ${result.skippedImageCount} could not be included (unsupported type or size limit).`}
-              </p>
+              <AgentPromptContextPanel context={result.context} />
             </>
           )}
         </div>
@@ -190,7 +279,7 @@ function TaskAgentPromptModal({
             type="button"
             size="sm"
             onClick={() => void handleCopy()}
-            disabled={!result || isPending}
+            disabled={!result || isPending || Boolean(error)}
           >
             {copied ? (
               <Check className="h-4 w-4 mr-2" />

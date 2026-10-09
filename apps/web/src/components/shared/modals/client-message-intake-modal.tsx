@@ -33,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { GenerateTaskIntakeDraftResponse } from "@/fetchers/task/generate-task-intake-draft";
 import useGenerateTaskIntakeDraft from "@/hooks/mutations/task/use-generate-task-intake-draft";
+import useGetConfig from "@/hooks/queries/config/use-get-config";
 import { cn } from "@/lib/cn";
 import { formatTaskIntakeDescription } from "@/lib/format-task-intake-markdown";
 
@@ -54,8 +55,13 @@ type ClientMessageIntakeModalProps = {
 };
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// Fallback until the server's limit (config.aiMaxImageBytes) has loaded.
+const DEFAULT_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_IMAGES = 3;
+
+function formatMegabytes(bytes: number): string {
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+}
 
 type UploadedImage = {
   mimeType: (typeof ALLOWED_IMAGE_TYPES)[number];
@@ -239,6 +245,14 @@ function ClientMessageIntakeModal({
   const [previewImage, setPreviewImage] = useState<UploadedImage | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
+  // Bumped on every open and every generate, so a draft that arrives after the
+  // modal was closed/reopened (or re-run) is ignored.
+  const requestIdRef = useRef(0);
+  // Screenshot slots taken, including files still being read. Updated
+  // synchronously so concurrent pastes can't exceed MAX_IMAGES.
+  const imageSlotsRef = useRef(0);
+  const { data: config } = useGetConfig();
+  const maxImageBytes = config?.aiMaxImageBytes ?? DEFAULT_MAX_IMAGE_BYTES;
 
   const {
     mutateAsync: generateDraft,
@@ -252,6 +266,8 @@ function ClientMessageIntakeModal({
       return;
     }
 
+    requestIdRef.current += 1;
+    imageSlotsRef.current = 0;
     setRawMessage("");
     setDraft(null);
     setOriginalMessageOpen(false);
@@ -270,7 +286,7 @@ function ClientMessageIntakeModal({
 
   const applyImageFiles = useCallback(
     async (files: File[]) => {
-      const remaining = MAX_IMAGES - uploadedImages.length;
+      const remaining = MAX_IMAGES - imageSlotsRef.current;
       if (remaining <= 0) {
         setImageError(
           `Maximum ${MAX_IMAGES} screenshots allowed. Remove one to add another.`,
@@ -280,6 +296,7 @@ function ClientMessageIntakeModal({
 
       const toProcess = files.slice(0, remaining);
       const skipped = files.length - toProcess.length;
+      imageSlotsRef.current += toProcess.length;
 
       const newImages: UploadedImage[] = [];
       let hadError = false;
@@ -295,8 +312,10 @@ function ClientMessageIntakeModal({
           break;
         }
 
-        if (file.size > MAX_IMAGE_BYTES) {
-          setImageError("Each screenshot must be 5 MB or smaller.");
+        if (file.size > maxImageBytes) {
+          setImageError(
+            `Each screenshot must be ${formatMegabytes(maxImageBytes)} or smaller.`,
+          );
           hadError = true;
           break;
         }
@@ -317,20 +336,25 @@ function ClientMessageIntakeModal({
         }
       }
 
+      // Release the slots of files that were rejected.
+      imageSlotsRef.current -= toProcess.length - newImages.length;
+
       if (newImages.length > 0) {
         setUploadedImages((current) => [...current, ...newImages]);
-        setImageError(null);
+      }
 
-        if (skipped > 0) {
-          setImageError(
-            `Only ${MAX_IMAGES} screenshots allowed. ${skipped} screenshot${skipped > 1 ? "s were" : " was"} not added.`,
-          );
-        }
+      // Keep a rejection message visible even when other files were added.
+      if (!hadError) {
+        setImageError(
+          skipped > 0
+            ? `Only ${MAX_IMAGES} screenshots allowed. ${skipped} screenshot${skipped > 1 ? "s were" : " was"} not added.`
+            : null,
+        );
       }
 
       return !hadError && newImages.length > 0;
     },
-    [uploadedImages.length],
+    [maxImageBytes],
   );
 
   const handleClipboardImagePaste = useCallback(
@@ -388,6 +412,7 @@ function ClientMessageIntakeModal({
   };
 
   const handleRemoveImage = (index: number) => {
+    imageSlotsRef.current = Math.max(0, imageSlotsRef.current - 1);
     setUploadedImages((current) => {
       const removed = current[index];
       if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
@@ -406,6 +431,7 @@ function ClientMessageIntakeModal({
     }
 
     reset();
+    const requestId = ++requestIdRef.current;
 
     try {
       const result = await generateDraft({
@@ -420,6 +446,7 @@ function ClientMessageIntakeModal({
             }
           : {}),
       });
+      if (requestId !== requestIdRef.current) return;
       setDraft(result);
     } catch {
       // Error state is handled by the mutation hook.
@@ -442,6 +469,7 @@ function ClientMessageIntakeModal({
   };
 
   const handleBack = () => {
+    requestIdRef.current += 1;
     setDraft(null);
     reset();
   };
@@ -623,9 +651,10 @@ function ClientMessageIntakeModal({
                         )}
 
                         <p className="text-xs text-muted-foreground">
-                          PNG, JPEG, or WebP up to 5 MB each. Up to {MAX_IMAGES}{" "}
-                          screenshots. Screenshots are analyzed by Gemini and
-                          are not stored.
+                          PNG, JPEG, or WebP up to{" "}
+                          {formatMegabytes(maxImageBytes)} each. Up to{" "}
+                          {MAX_IMAGES} screenshots. Screenshots are analyzed by
+                          Gemini and are not stored.
                         </p>
                       </div>
                     </div>

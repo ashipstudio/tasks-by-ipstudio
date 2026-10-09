@@ -279,7 +279,12 @@ const task = new Hono<{
       v.pipe(
         v.object({
           rawMessage: v.optional(v.string()),
-          images: v.optional(v.array(aiTaskIntakeImageSchema)),
+          images: v.optional(
+            v.pipe(
+              v.array(aiTaskIntakeImageSchema),
+              v.maxLength(1, "Updates support one screenshot"),
+            ),
+          ),
           image: v.optional(aiTaskIntakeImageSchema),
         }),
         v.check(

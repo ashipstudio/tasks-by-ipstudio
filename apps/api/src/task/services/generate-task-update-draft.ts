@@ -5,6 +5,7 @@ import * as v from "valibot";
 import db from "../../database";
 import { activityTable, taskTable, userTable } from "../../database/schema";
 import { getAiTaskIntakeSettings } from "../../utils/get-settings";
+import { formatActivityEvent } from "../format-activity-event";
 import {
   AI_TASK_INTAKE_ALLOWED_IMAGE_MIME_TYPES,
   type AiTaskIntakeImageInput,
@@ -315,15 +316,8 @@ function formatActivityForPrompt(activity: CompactActivity[]): string {
         const text = item.content.replace(/\n+/g, " ").slice(0, 300);
         return `[${ts}] comment: ${text}`;
       }
-      if (item.eventData && typeof item.eventData === "object") {
-        const d = item.eventData as Record<string, unknown>;
-        const detail =
-          d.from !== undefined && d.to !== undefined
-            ? `${d.from} → ${d.to}`
-            : JSON.stringify(d).slice(0, 120);
-        return `[${ts}] ${item.type}: ${detail}`;
-      }
-      return `[${ts}] ${item.type}`;
+      const event = formatActivityEvent(item.type, item.eventData);
+      return event ? `[${ts}] ${event}` : `[${ts}] ${item.type}`;
     })
     .join("\n");
 }

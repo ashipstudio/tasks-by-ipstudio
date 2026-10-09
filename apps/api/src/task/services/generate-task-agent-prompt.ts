@@ -13,6 +13,7 @@ import {
 } from "../../database/schema";
 import { getPrivateObject } from "../../storage/s3";
 import { getAiTaskIntakeSettings } from "../../utils/get-settings";
+import { formatActivityEvent } from "../format-activity-event";
 
 const GEMINI_REQUEST_TIMEOUT_MS = 90_000;
 const DESCRIPTION_MAX_CHARS = 30_000;
@@ -37,10 +38,23 @@ const ASSET_URL_GLOBAL_PATTERN = /\/api\/asset\/([A-Za-z0-9_-]+)/g;
 const IMAGE_TAG_PATTERN =
   /<img\b[^>]*?\bsrc=["']([^"']+)["'][^>]*>|!\[[^\]]*\]\(([^)\s]+)[^)]*\)/gi;
 
+export type TaskAgentPromptImage = {
+  assetId: string;
+  label: string;
+  filename: string;
+  mimeType: string;
+  attached: boolean;
+  /** Why the image was not sent to the AI; null when attached. */
+  skipReason: string | null;
+};
+
 export type TaskAgentPrompt = {
   markdown: string;
-  imageCount: number;
-  skippedImageCount: number;
+  /** Exactly what the AI was given, so users can check the brief's sources. */
+  context: {
+    prompt: string;
+    images: TaskAgentPromptImage[];
+  };
 };
 
 type TaskImage = {
@@ -50,7 +64,7 @@ type TaskImage = {
   data: string;
 };
 
-type ImageRef = { label: string; attached: boolean };
+type ImageRef = { label: string; attached: boolean; skipReason: string | null };
 
 // ---------------------------------------------------------------------------
 // Task material
@@ -171,15 +185,18 @@ function getReferencedAssets(material: TaskMaterial): TaskAsset[] {
 async function loadTaskImages(assets: TaskAsset[]) {
   const refs = new Map<string, ImageRef>();
   const candidates: Array<{ asset: TaskAsset; label: string }> = [];
+  const skip = (asset: TaskAsset, label: string, skipReason: string) =>
+    refs.set(asset.id, { label, attached: false, skipReason });
 
   assets.forEach((asset, index) => {
     const label = `Image ${index + 1} (${asset.filename})`;
-    refs.set(asset.id, { label, attached: false });
-    if (
-      GEMINI_IMAGE_MIME_TYPES.has(asset.mimeType.toLowerCase()) &&
-      asset.size <= MAX_IMAGE_BYTES &&
-      candidates.length < MAX_IMAGES
-    ) {
+    if (!GEMINI_IMAGE_MIME_TYPES.has(asset.mimeType.toLowerCase())) {
+      skip(asset, label, `Unsupported image type (${asset.mimeType})`);
+    } else if (asset.size > MAX_IMAGE_BYTES) {
+      skip(asset, label, "Larger than the 7 MB per-image limit");
+    } else if (candidates.length >= MAX_IMAGES) {
+      skip(asset, label, `Only the first ${MAX_IMAGES} images are read`);
+    } else {
       candidates.push({ asset, label });
     }
   });
@@ -199,10 +216,28 @@ async function loadTaskImages(assets: TaskAsset[]) {
         `Agent prompt: failed to load image ${candidate.asset.id}:`,
         result.reason,
       );
+      skip(
+        candidate.asset,
+        candidate.label,
+        "Could not be loaded from storage",
+      );
       return;
     }
     const bytes = result.value.length;
-    if (bytes > MAX_IMAGE_BYTES || totalBytes + bytes > MAX_TOTAL_IMAGE_BYTES) {
+    if (bytes > MAX_IMAGE_BYTES) {
+      skip(
+        candidate.asset,
+        candidate.label,
+        "Larger than the 7 MB per-image limit",
+      );
+      return;
+    }
+    if (totalBytes + bytes > MAX_TOTAL_IMAGE_BYTES) {
+      skip(
+        candidate.asset,
+        candidate.label,
+        "Total image size limit (12 MB) reached",
+      );
       return;
     }
     totalBytes += bytes;
@@ -212,7 +247,11 @@ async function loadTaskImages(assets: TaskAsset[]) {
       mimeType: candidate.asset.mimeType.toLowerCase(),
       data: result.value.toString("base64"),
     });
-    refs.set(candidate.asset.id, { label: candidate.label, attached: true });
+    refs.set(candidate.asset.id, {
+      label: candidate.label,
+      attached: true,
+      skipReason: null,
+    });
   });
 
   return { images, refs };
@@ -250,27 +289,6 @@ function formatDate(date: Date | null): string | null {
   return date ? date.toISOString().slice(0, 10) : null;
 }
 
-function formatEvent(type: string, eventData: unknown): string | null {
-  const data =
-    eventData && typeof eventData === "object"
-      ? (eventData as Record<string, unknown>)
-      : {};
-  switch (type) {
-    case "status_changed":
-      return `status changed from ${data.oldStatus} to ${data.newStatus}`;
-    case "priority_changed":
-      return `priority changed from ${data.oldPriority} to ${data.newPriority}`;
-    case "title_changed":
-      return `title changed from "${data.oldTitle}" to "${data.newTitle}"`;
-    case "due_date_changed":
-      return `due date changed to ${String(data.newDueDate ?? "").slice(0, 10)}`;
-    case "assignee_changed":
-      return `assigned to ${data.newAssignee}`;
-    default:
-      return null;
-  }
-}
-
 function buildCommentsSection(
   activities: TaskMaterial["activities"],
   refs: Map<string, ImageRef>,
@@ -278,7 +296,7 @@ function buildCommentsSection(
   const entries = activities
     .map((item) => {
       const date = item.createdAt.toISOString().slice(0, 10);
-      const author = item.authorName ?? item.externalUserName ?? "Unknown";
+      const author = item.authorName || item.externalUserName || "Unknown";
 
       if (item.type === "comment" && item.content?.trim()) {
         const body = truncate(
@@ -289,7 +307,7 @@ function buildCommentsSection(
         return `[${date}] Comment by ${author}:\n${body}`;
       }
 
-      const event = formatEvent(item.type, item.eventData);
+      const event = formatActivityEvent(item.type, item.eventData);
       return event ? `[${date}] ${author}: ${event}` : null;
     })
     .filter((entry): entry is string => entry !== null);
@@ -431,7 +449,8 @@ export async function generateTaskAgentPrompt(
     parts.push({ text: `${image.label}:` });
     parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
   }
-  parts.push({ text: buildPrompt(material, refs, images) });
+  const prompt = buildPrompt(material, refs, images);
+  parts.push({ text: prompt });
 
   const abortController = new AbortController();
   const timeoutId = setTimeout(
@@ -459,8 +478,20 @@ export async function generateTaskAgentPrompt(
 
     return {
       markdown,
-      imageCount: images.length,
-      skippedImageCount: referencedAssets.length - images.length,
+      context: {
+        prompt,
+        images: referencedAssets.map((asset) => {
+          const ref = refs.get(asset.id);
+          return {
+            assetId: asset.id,
+            label: ref?.label ?? asset.filename,
+            filename: asset.filename,
+            mimeType: asset.mimeType,
+            attached: ref?.attached ?? false,
+            skipReason: ref?.skipReason ?? null,
+          };
+        }),
+      },
     };
   } catch (error) {
     if (abortController.signal.aborted) {

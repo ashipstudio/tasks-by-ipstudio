@@ -16,6 +16,7 @@ import useGetTask from "@/hooks/queries/task/use-get-task";
 import useGetTaskRelations from "@/hooks/queries/task-relation/use-get-task-relations";
 import useGetWorkspaceUsers from "@/hooks/queries/workspace-users/use-get-workspace-users";
 import type { ExternalLink } from "@/types/external-link";
+import TaskAttachments from "./task-attachments";
 import TaskDescription from "./task-description";
 import TaskRelations from "./task-relations";
 import TaskSubtasks from "./task-subtasks";
@@ -107,6 +108,7 @@ export default function TaskDetailsContent({
         </p>
         <TaskTitle taskId={taskId} />
         <TaskDescription taskId={taskId} />
+        <TaskAttachments taskId={taskId} comments={activities} />
       </div>
       {!isLoadingExternalLinks && externalLinks.length > 0 && (
         <div className="mt-4">

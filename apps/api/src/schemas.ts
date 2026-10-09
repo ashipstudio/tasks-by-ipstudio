@@ -73,8 +73,19 @@ export const aiTaskUpdateProposalSchema = v.object({
 
 export const taskAgentPromptSchema = v.object({
   markdown: v.string(),
-  imageCount: v.number(),
-  skippedImageCount: v.number(),
+  context: v.object({
+    prompt: v.string(),
+    images: v.array(
+      v.object({
+        assetId: v.string(),
+        label: v.string(),
+        filename: v.string(),
+        mimeType: v.string(),
+        attached: v.boolean(),
+        skipReason: v.nullable(v.string()),
+      }),
+    ),
+  }),
 });
 
 export const taskSchema = v.object({
@@ -270,4 +281,5 @@ export const configSchema = v.object({
   hasDiscordSignIn: v.nullable(v.boolean()),
   hasCustomOAuth: v.nullable(v.boolean()),
   hasAiTaskIntake: v.boolean(),
+  aiMaxImageBytes: v.number(),
 });
